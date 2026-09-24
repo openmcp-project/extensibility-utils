@@ -1,4 +1,70 @@
-# OpenControlPlane Repository Template
+# Extensibility Utils
+
+A Go utility library for simplifying flux based OpenControlPlane service-providers with cross-cluster object management and Flux integration.
+
+## Features
+
+- **Object Manager**: Reconcile and manage Kubernetes objects across one or more clusters
+- **Flux Integration**: Deploy Helm charts through Flux HelmRelease and OCIRepository resources
+- **Secret Management**: Copy and manage Kubernetes secrets across clusters
+- **Lifecycle Tracking**: Monitor object status and readiness with configurable policies
+- **Dependency Management**: Define and respect object dependencies during reconciliation
+
+## Package Documentation
+
+### `pkg/objectmanager`
+
+Core package for managing Kubernetes objects across clusters.
+
+**Key Types:**
+- `Manager`: Main interface for managing object lifecycle (Apply, Delete)
+- `Cluster`: Represents a Kubernetes cluster containing objects
+- `Object`: Wraps a client.Object with reconciliation and status functions
+- `Cleaner`: Removes managed objects not in a specified list
+
+**Key Features:**
+- Dependency-aware reconciliation
+- Configurable deletion policies (delete or orphan)
+- Status tracking (Ready, Progressing, Terminating, Unknown)
+- Multiple cleaner support for cleanup operations
+
+### `pkg/flux`
+
+Provides helpers for deploying Helm charts through Flux.
+
+**Key Types:**
+- `ResourceVersion`: Interface for chart version information
+- `ResourceConfig`: Configuration for Flux resources
+- `ManageResources()`: Function to register OCIRepository and HelmRelease
+
+**Supported Resources:**
+- `HelmRelease` - Managed Helm release deployment
+- `OCIRepository` - OCI registry source for Helm charts
+
+### `pkg/secret`
+
+Utilities for managing Kubernetes secrets across clusters.
+
+**Key Functions:**
+- `ManagePullSecret()`: Register an image-pull secret copy
+- `NewCleaner()`: Create a cleaner for managed pull secrets
+- `PrefixName()`: Prefix and validate secret names to Kubernetes limits
+
+### `pkg/internal`
+
+Internal utilities for object management.
+
+**Key Features:**
+- Label management with `app.kubernetes.io/managed-by` label
+- Service provider filtering for managed objects
+
+## Dependencies
+
+This library requires:
+- Go 1.26.5+
+- Kubernetes 1.36+
+- Flux CD v2 (helm-controller, source-controller)
+- controller-runtime v0.24+
 
 ## Support, Feedback, Contributing
 

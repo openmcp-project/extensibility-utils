@@ -1,0 +1,11 @@
+version: 3
+
+includes:
+  shared:
+    taskfile: hack/common/Taskfile_library.yaml
+    flatten: true
+    vars:
+      NESTED_MODULES: ''
+      CODE_DIRS: '{{.ROOT_DIR}}/pkg/...'
+      GENERATE_DOCS_INDEX: "false"
+      MANIFEST_OUT: ""
