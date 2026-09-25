@@ -55,5 +55,5 @@ func TestManagerApplyAndDelete(t *testing.T) {
 func TestManagedObjectJSON(t *testing.T) {
 	encoded, err := json.Marshal(ManagedObject{APIGroup: "apps", Kind: "Deployment", Name: "app", ManagedObjectStatus: ManagedObjectStatus{Phase: StatusPhaseReady}})
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"apiGroup":"apps","kind":"Deployment","name":"app","status":{"phase":"Ready"}}`, string(encoded))
+	assert.JSONEq(t, `{"apiGroup":"apps","kind":"Deployment","name":"app","phase":"Ready"}`, string(encoded))
 }
