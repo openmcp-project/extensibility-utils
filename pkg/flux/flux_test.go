@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
+
 	"github.com/openmcp-project/extensibility-utils/pkg/objectmanager"
 )
 
