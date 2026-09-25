@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -19,7 +20,7 @@ func testCluster(t *testing.T, objects ...runtime.Object) Cluster {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
-	return NewCluster(fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objects...).Build(), "default", PlatformCluster)
+	return NewCluster(clusters.NewTestClusterFromClient("platform", fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objects...).Build()), "default", PlatformCluster)
 }
 
 func TestManagerApplyAndDelete(t *testing.T) {
@@ -52,7 +53,7 @@ func TestManagerApplyAndDelete(t *testing.T) {
 }
 
 func TestManagedObjectJSON(t *testing.T) {
-	encoded, err := json.Marshal(ManagedObject{APIGroup: "apps", Kind: "Deployment", Name: "app", Status: ManagedObjectStatus{Phase: StatusPhaseReady}})
+	encoded, err := json.Marshal(ManagedObject{APIGroup: "apps", Kind: "Deployment", Name: "app", ManagedObjectStatus: ManagedObjectStatus{Phase: StatusPhaseReady}})
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"apiGroup":"apps","kind":"Deployment","name":"app","status":{"phase":"Ready"}}`, string(encoded))
 }

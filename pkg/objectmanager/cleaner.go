@@ -47,7 +47,7 @@ func (c *cleaner[T]) Cleanup(ctx context.Context) ([]Result, error) {
 		return nil, fmt.Errorf("%w: missing empty list definition", ErrCleanup)
 	}
 	list := c.config.EmptyList()
-	if err := c.cluster.GetClient().List(ctx, list, client.InNamespace(c.namespace), internal.ManagedBy(c.serviceProvider)); err != nil {
+	if err := c.cluster.Client().List(ctx, list, client.InNamespace(c.namespace), internal.ManagedBy(c.serviceProvider)); err != nil {
 		log.FromContext(ctx).Error(err, "failed to list objects for cleanup")
 		return nil, fmt.Errorf("%w: %w", ErrCleanup, err)
 	}
@@ -72,7 +72,7 @@ func (c *cleaner[T]) Cleanup(ctx context.Context) ([]Result, error) {
 				continue
 			}
 		}
-		if err := c.cluster.GetClient().Delete(ctx, object); err != nil && client.IgnoreNotFound(err) != nil {
+		if err := c.cluster.Client().Delete(ctx, object); err != nil && client.IgnoreNotFound(err) != nil {
 			results = append(results, c.result(object, OperationResultDeletionFailed, err, StatusPhaseProgressing, fmt.Sprintf("Deletion failed, retrying: %s", err)))
 		}
 	}

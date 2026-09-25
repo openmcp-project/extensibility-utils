@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -24,7 +25,7 @@ func TestCleanerDeletesUnwantedManagedObjects(t *testing.T) {
 		},
 	}
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
-	cluster := NewCluster(fakeClient, "default", PlatformCluster)
+	cluster := NewCluster(clusters.NewTestClusterFromClient("platform", fakeClient), "default", PlatformCluster)
 	cleaner := NewCleaner(cluster, "test", "default", CleanerConfig[*corev1.SecretList]{
 		EmptyList: func() *corev1.SecretList { return &corev1.SecretList{} },
 	})

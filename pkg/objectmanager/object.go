@@ -37,11 +37,11 @@ type ObjectConfig struct {
 
 // Object represents an object managed by a Manager.
 type Object interface {
-	GetObject() client.Object
+	ClientObject() client.Object
 	Reconcile(context.Context) error
-	GetDependencies() []Object
-	GetDeletionPolicy() DeletionPolicy
-	GetStatus() ManagedObjectStatus
+	Dependencies() []Object
+	DeletionPolicy() DeletionPolicy
+	Status() ManagedObjectStatus
 }
 
 type object struct {
@@ -68,7 +68,7 @@ func NewObject(clientObject client.Object, config ObjectConfig) Object {
 	}
 }
 
-func (o *object) GetObject() client.Object { return o.object }
+func (o *object) ClientObject() client.Object { return o.object }
 
 func (o *object) Reconcile(ctx context.Context) error {
 	if o.reconcileFunc == nil {
@@ -77,11 +77,11 @@ func (o *object) Reconcile(ctx context.Context) error {
 	return o.reconcileFunc(ctx, o.object)
 }
 
-func (o *object) GetDependencies() []Object { return o.dependencies }
+func (o *object) Dependencies() []Object { return o.dependencies }
 
-func (o *object) GetDeletionPolicy() DeletionPolicy { return o.deletionPolicy }
+func (o *object) DeletionPolicy() DeletionPolicy { return o.deletionPolicy }
 
-func (o *object) GetStatus() ManagedObjectStatus {
+func (o *object) Status() ManagedObjectStatus {
 	if o.statusFunc == nil {
 		return ManagedObjectStatus{Phase: StatusPhaseUnknown, Message: "No status function defined."}
 	}
@@ -90,19 +90,19 @@ func (o *object) GetStatus() ManagedObjectStatus {
 
 // ManagedObjectStatus describes an object's observed lifecycle state.
 type ManagedObjectStatus struct {
-	Phase   string `json:"phase,omitempty"`
+	Phase   string `json:"phase"`
 	Message string `json:"message,omitempty"`
 }
 
 // ManagedObject is the serializable result returned by Apply and Delete.
 // Its JSON tags allow consumers to use it directly in their status API.
 type ManagedObject struct {
-	APIGroup  string              `json:"apiGroup,omitempty"`
-	Kind      string              `json:"kind"`
-	Name      string              `json:"name"`
-	Namespace string              `json:"namespace,omitempty"`
-	Location  string              `json:"location,omitempty"`
-	Status    ManagedObjectStatus `json:"status,omitempty"`
+	APIGroup            string `json:"apiGroup,omitempty"`
+	Kind                string `json:"kind"`
+	Name                string `json:"name"`
+	Namespace           string `json:"namespace,omitempty"`
+	Location            string `json:"location,omitempty"`
+	ManagedObjectStatus `json:",inline"`
 }
 
 // SimpleStatus reports whether an object is terminating, pending, or present.
@@ -114,4 +114,9 @@ func SimpleStatus(object client.Object) ManagedObjectStatus {
 		return ManagedObjectStatus{Phase: StatusPhaseProgressing, Message: "Resource has not been created yet."}
 	}
 	return ManagedObjectStatus{Phase: StatusPhaseReady, Message: "Resource exists."}
+}
+
+// NoOp does not do anything with the provided object and returns nil.
+func NoOp(context.Context, client.Object) error {
+	return nil
 }

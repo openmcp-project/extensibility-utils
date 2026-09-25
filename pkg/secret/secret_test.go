@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/extensibility-utils/pkg/objectmanager"
 )
 
@@ -84,7 +85,7 @@ func TestManagePullSecret(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cluster := objectmanager.NewCluster(fakeClient, sourceNamespace, objectmanager.PlatformCluster)
+			cluster := objectmanager.NewCluster(clusters.NewTestClusterFromClient("platform", fakeClient), sourceNamespace, objectmanager.PlatformCluster)
 			err := ManagePullSecret(cluster, tt.config)
 			require.NoError(t, err)
 

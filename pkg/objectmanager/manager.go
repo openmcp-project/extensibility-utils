@@ -45,17 +45,16 @@ type ReconcileResult struct {
 func (rr ReconcileResult) ManagedObjects() []ManagedObject {
 	managedObjects := make([]ManagedObject, 0, len(rr.Results))
 	for _, result := range rr.Results {
-		obj := result.Object.GetObject()
-		gvk, _ := result.Cluster.GetClient().GroupVersionKindFor(obj)
+		obj := result.Object.ClientObject()
+		gvk, _ := result.Cluster.Client().GroupVersionKindFor(obj)
 		managedObjects = append(managedObjects, ManagedObject{
-			APIGroup:  gvk.Group,
-			Kind:      gvk.Kind,
-			Name:      obj.GetName(),
-			Namespace: obj.GetNamespace(),
-			Location:  string(result.Cluster.GetClusterType()),
-			Status:    result.Object.GetStatus(),
-		},
-		)
+			APIGroup:            gvk.Group,
+			Kind:                gvk.Kind,
+			Name:                obj.GetName(),
+			Namespace:           obj.GetNamespace(),
+			Location:            string(result.Cluster.ClusterType()),
+			ManagedObjectStatus: result.Object.Status(),
+		})
 	}
 	return managedObjects
 }
@@ -97,7 +96,7 @@ func (m *manager) reconcileObjects(ctx context.Context, deleting bool) ([]Result
 	dependents := m.getDependents()
 	results := []Result{}
 	for _, cluster := range m.clusters {
-		for _, object := range cluster.GetObjects() {
+		for _, object := range cluster.Objects() {
 			results = append(results, m.reconcileObject(ctx, cluster, object, dependents, deleting))
 		}
 	}
@@ -119,10 +118,10 @@ func (m *manager) reconcileObject(ctx context.Context, cluster Cluster, object O
 		if err := m.checkForDependents(ctx, dependents[object]); err != nil {
 			return Result{Object: object, Cluster: cluster, Error: err}
 		}
-		if object.GetDeletionPolicy() == Orphan {
+		if object.DeletionPolicy() == Orphan {
 			return Result{Object: object, Cluster: cluster, OperationResult: OperationResultOrphaned}
 		}
-		err := cluster.GetClient().Delete(ctx, object.GetObject())
+		err := cluster.Client().Delete(ctx, object.ClientObject())
 		if apierrors.IsNotFound(err) {
 			return Result{Object: object, Cluster: cluster, OperationResult: OperationResultDeleted}
 		}
@@ -132,8 +131,8 @@ func (m *manager) reconcileObject(ctx context.Context, cluster Cluster, object O
 		return Result{Object: object, Cluster: cluster, OperationResult: OperationResultDeletionRequested}
 	}
 
-	result, err := controllerutil.CreateOrUpdate(ctx, cluster.GetClient(), object.GetObject(), func() error {
-		internal.SetManagedBy(object.GetObject(), m.serviceProvider)
+	result, err := controllerutil.CreateOrUpdate(ctx, cluster.Client(), object.ClientObject(), func() error {
+		internal.SetManagedBy(object.ClientObject(), m.serviceProvider)
 		return object.Reconcile(ctx)
 	})
 	return Result{Object: object, Cluster: cluster, OperationResult: result, Error: err}
@@ -142,8 +141,8 @@ func (m *manager) reconcileObject(ctx context.Context, cluster Cluster, object O
 func (m *manager) checkForDependents(ctx context.Context, dependencies []dependency) error {
 	var errs []error
 	for _, dependency := range dependencies {
-		object := dependency.Object.GetObject()
-		err := dependency.Cluster.GetClient().Get(ctx, client.ObjectKeyFromObject(object), object)
+		object := dependency.Object.ClientObject()
+		err := dependency.Cluster.Client().Get(ctx, client.ObjectKeyFromObject(object), object)
 		if apierrors.IsNotFound(err) {
 			continue
 		}
@@ -159,8 +158,8 @@ func (m *manager) checkForDependents(ctx context.Context, dependencies []depende
 func (m *manager) getDependents() dependents {
 	dependents := dependents{}
 	for _, cluster := range m.clusters {
-		for _, object := range cluster.GetObjects() {
-			for _, dependencyObject := range object.GetDependencies() {
+		for _, object := range cluster.Objects() {
+			for _, dependencyObject := range object.Dependencies() {
 				dependents[dependencyObject] = append(dependents[dependencyObject], dependency{Object: object, Cluster: cluster})
 			}
 		}
@@ -203,6 +202,6 @@ func allObjectsDeleted(results []Result) (bool, error) {
 
 func allObjectsReady(results []Result) (bool, error) {
 	return allObjects(results, func(r Result) bool {
-		return r.Object.GetStatus().Phase == StatusPhaseReady
+		return r.Object.Status().Phase == StatusPhaseReady
 	})
 }
