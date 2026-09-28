@@ -12,7 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/openmcp-project/extensibility-utils/pkg/internal"
+	"github.com/openmcp-project/extensibility-utils/pkg/objectmanager/internal"
 )
 
 // ErrCleanup indicates that a cleaner could not list its target objects.
