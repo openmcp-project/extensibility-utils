@@ -3,6 +3,7 @@ package objectmanager
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
@@ -56,4 +57,35 @@ func TestManagedObjectJSON(t *testing.T) {
 	encoded, err := json.Marshal(ManagedObject{APIGroup: "apps", Kind: "Deployment", Name: "app", ManagedObjectStatus: ManagedObjectStatus{Phase: StatusPhaseReady}})
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"apiGroup":"apps","kind":"Deployment","name":"app","phase":"Ready"}`, string(encoded))
+}
+
+func TestReconcileResult_Errors(t *testing.T) {
+	errOne := errors.New("one")
+	errTwo := errors.New("two")
+	rr := ReconcileResult{
+		Results: []Result{
+			{
+				Object:          nil,
+				Cluster:         nil,
+				OperationResult: "no error",
+				Error:           nil,
+			},
+			{
+				Object:          nil,
+				Cluster:         nil,
+				OperationResult: "first error",
+				Error:           errOne,
+			},
+			{
+				Object:          nil,
+				Cluster:         nil,
+				OperationResult: "second error",
+				Error:           errTwo,
+			},
+		},
+	}
+	got := rr.Errors()
+	assert.Len(t, got, 2)
+	assert.Contains(t, got, errOne)
+	assert.Contains(t, got, errTwo)
 }

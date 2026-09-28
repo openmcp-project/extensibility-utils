@@ -59,6 +59,16 @@ func (rr ReconcileResult) ManagedObjects() []ManagedObject {
 	return managedObjects
 }
 
+func (rr ReconcileResult) Errors() []error {
+	errors := make([]error, 0, len(rr.Results))
+	for _, v := range rr.Results {
+		if v.Error != nil {
+			errors = append(errors, v.Error)
+		}
+	}
+	return errors
+}
+
 type manager struct {
 	serviceProvider string
 	clusters        []Cluster
