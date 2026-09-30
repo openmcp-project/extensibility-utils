@@ -3,8 +3,10 @@ package objectmanager
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
+	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -19,7 +21,7 @@ func testCluster(t *testing.T, objects ...runtime.Object) Cluster {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
-	return NewCluster(fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objects...).Build(), "default", PlatformCluster)
+	return NewCluster(clusters.NewTestClusterFromClient("platform", fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objects...).Build()), "default", PlatformCluster)
 }
 
 func TestManagerApplyAndDelete(t *testing.T) {
@@ -52,7 +54,38 @@ func TestManagerApplyAndDelete(t *testing.T) {
 }
 
 func TestManagedObjectJSON(t *testing.T) {
-	encoded, err := json.Marshal(ManagedObject{APIGroup: "apps", Kind: "Deployment", Name: "app", Status: ManagedObjectStatus{Phase: StatusPhaseReady}})
+	encoded, err := json.Marshal(ManagedObject{APIGroup: "apps", Kind: "Deployment", Name: "app", ManagedObjectStatus: ManagedObjectStatus{Phase: StatusPhaseReady}})
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"apiGroup":"apps","kind":"Deployment","name":"app","status":{"phase":"Ready"}}`, string(encoded))
+	assert.JSONEq(t, `{"apiGroup":"apps","kind":"Deployment","name":"app","phase":"Ready"}`, string(encoded))
+}
+
+func TestReconcileResult_Errors(t *testing.T) {
+	errOne := errors.New("one")
+	errTwo := errors.New("two")
+	rr := ReconcileResult{
+		Results: []Result{
+			{
+				Object:          nil,
+				Cluster:         nil,
+				OperationResult: "no error",
+				Error:           nil,
+			},
+			{
+				Object:          nil,
+				Cluster:         nil,
+				OperationResult: "first error",
+				Error:           errOne,
+			},
+			{
+				Object:          nil,
+				Cluster:         nil,
+				OperationResult: "second error",
+				Error:           errTwo,
+			},
+		},
+	}
+	got := rr.Errors()
+	assert.Len(t, got, 2)
+	assert.Contains(t, got, errOne)
+	assert.Contains(t, got, errTwo)
 }

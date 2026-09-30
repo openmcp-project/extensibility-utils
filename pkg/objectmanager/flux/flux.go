@@ -101,7 +101,7 @@ func newOCIRepository(config ResourceConfig) objectmanager.Object {
 	return objectmanager.NewObject(&sourcev1.OCIRepository{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      config.OCIRepositoryName,
-			Namespace: config.Cluster.GetDefaultNamespace(),
+			Namespace: config.Cluster.DefaultNamespace(),
 		},
 	}, objectmanager.ObjectConfig{
 		ReconcileFunc: func(_ context.Context, object client.Object) error {
@@ -133,7 +133,7 @@ func newHelmRelease(config ResourceConfig, dependencies []objectmanager.Object) 
 	return objectmanager.NewObject(&helmv2.HelmRelease{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      config.HelmReleaseName,
-			Namespace: config.Cluster.GetDefaultNamespace(),
+			Namespace: config.Cluster.DefaultNamespace(),
 		},
 	}, objectmanager.ObjectConfig{
 		ReconcileFunc: func(_ context.Context, object client.Object) error {
@@ -146,7 +146,7 @@ func newHelmRelease(config ResourceConfig, dependencies []objectmanager.Object) 
 				ChartRef: &helmv2.CrossNamespaceSourceReference{
 					Kind:      "OCIRepository",
 					Name:      config.OCIRepositoryName,
-					Namespace: config.Cluster.GetDefaultNamespace(),
+					Namespace: config.Cluster.DefaultNamespace(),
 				},
 				KubeConfig: config.KubeConfig,
 				Install: &helmv2.Install{

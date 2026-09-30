@@ -18,6 +18,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/openmcp-project/controller-utils/pkg/clusters"
+
 	"github.com/openmcp-project/extensibility-utils/pkg/objectmanager"
 )
 
@@ -27,7 +29,7 @@ func fluxTestCluster(t *testing.T) objectmanager.Cluster {
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, sourcev1.AddToScheme(scheme))
 	require.NoError(t, helmv2.AddToScheme(scheme))
-	return objectmanager.NewCluster(fake.NewClientBuilder().WithScheme(scheme).Build(), "flux-system", objectmanager.PlatformCluster)
+	return objectmanager.NewCluster(clusters.NewTestClusterFromClient("platform", fake.NewClientBuilder().WithScheme(scheme).Build()), "flux-system", objectmanager.PlatformCluster)
 }
 
 func validConfig(t *testing.T) ResourceConfig {
@@ -54,7 +56,7 @@ func TestManageResources(t *testing.T) {
 	assert.True(t, result.Requeue, "Flux resources are not yet Ready (no ReadyCondition set by fake client)")
 
 	ociRepo := &sourcev1.OCIRepository{}
-	require.NoError(t, config.Cluster.GetClient().Get(context.Background(), client.ObjectKey{Name: "chart", Namespace: "flux-system"}, ociRepo))
+	require.NoError(t, config.Cluster.Client().Get(context.Background(), client.ObjectKey{Name: "chart", Namespace: "flux-system"}, ociRepo))
 	assert.Equal(t, "oci://registry.example.com/chart", ociRepo.Spec.URL)
 	assert.Equal(t, "1.0.0", ociRepo.Spec.Reference.Tag)
 	assert.Equal(t, time.Hour, ociRepo.Spec.Interval.Duration)
@@ -64,7 +66,7 @@ func TestManageResources(t *testing.T) {
 	assert.Equal(t, "extract", ociRepo.Spec.LayerSelector.Operation)
 
 	helmRelease := &helmv2.HelmRelease{}
-	require.NoError(t, config.Cluster.GetClient().Get(context.Background(), client.ObjectKey{Name: "release", Namespace: "flux-system"}, helmRelease))
+	require.NoError(t, config.Cluster.Client().Get(context.Background(), client.ObjectKey{Name: "release", Namespace: "flux-system"}, helmRelease))
 	assert.Equal(t, "OCIRepository", helmRelease.Spec.ChartRef.Kind)
 	assert.Equal(t, "chart", helmRelease.Spec.ChartRef.Name)
 	assert.Equal(t, "flux-system", helmRelease.Spec.ChartRef.Namespace)
@@ -92,7 +94,7 @@ func TestManageResources_NoPullSecret(t *testing.T) {
 	require.NoError(t, err)
 
 	ociRepo := &sourcev1.OCIRepository{}
-	require.NoError(t, config.Cluster.GetClient().Get(context.Background(), client.ObjectKey{Name: "chart", Namespace: "flux-system"}, ociRepo))
+	require.NoError(t, config.Cluster.Client().Get(context.Background(), client.ObjectKey{Name: "chart", Namespace: "flux-system"}, ociRepo))
 	assert.Nil(t, ociRepo.Spec.SecretRef, "SecretRef should be absent when no pull secret is configured")
 }
 

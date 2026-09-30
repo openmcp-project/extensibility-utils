@@ -1,6 +1,7 @@
 package objectmanager
 
 import (
+	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -16,14 +17,15 @@ const (
 // Cluster holds objects that are reconciled against one Kubernetes client.
 type Cluster interface {
 	AddObject(Object)
-	GetObjects() []Object
-	GetDefaultNamespace() string
-	GetClient() client.Client
-	GetClusterType() ClusterType
+	Objects() []Object
+	DefaultNamespace() string
+	Client() client.Client
+	ClusterType() ClusterType
+	Cluster() *clusters.Cluster
 }
 
 type cluster struct {
-	client           client.Client
+	cluster          *clusters.Cluster
 	objects          []Object
 	defaultNamespace string
 	clusterType      ClusterType
@@ -32,9 +34,9 @@ type cluster struct {
 var _ Cluster = (*cluster)(nil)
 
 // NewCluster creates an object-manager cluster from a Kubernetes client.
-func NewCluster(client client.Client, namespace string, clusterType ClusterType) Cluster {
+func NewCluster(c *clusters.Cluster, namespace string, clusterType ClusterType) Cluster {
 	return &cluster{
-		client:           client,
+		cluster:          c,
 		objects:          []Object{},
 		defaultNamespace: namespace,
 		clusterType:      clusterType,
@@ -43,10 +45,12 @@ func NewCluster(client client.Client, namespace string, clusterType ClusterType)
 
 func (c *cluster) AddObject(object Object) { c.objects = append(c.objects, object) }
 
-func (c *cluster) GetObjects() []Object { return c.objects }
+func (c *cluster) Objects() []Object { return c.objects }
 
-func (c *cluster) GetDefaultNamespace() string { return c.defaultNamespace }
+func (c *cluster) DefaultNamespace() string { return c.defaultNamespace }
 
-func (c *cluster) GetClient() client.Client { return c.client }
+func (c *cluster) Client() client.Client { return c.cluster.Client() }
 
-func (c *cluster) GetClusterType() ClusterType { return c.clusterType }
+func (c *cluster) ClusterType() ClusterType { return c.clusterType }
+
+func (c *cluster) Cluster() *clusters.Cluster { return c.cluster }
