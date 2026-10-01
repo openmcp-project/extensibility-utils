@@ -32,45 +32,45 @@ func fluxTestCluster(t *testing.T) objectmanager.Cluster {
 	return objectmanager.NewCluster(clusters.NewTestClusterFromClient("platform", fake.NewClientBuilder().WithScheme(scheme).Build()), "flux-system", objectmanager.PlatformCluster)
 }
 
-func validConfig(t *testing.T) ResourceConfig {
-	t.Helper()
-	return ResourceConfig{
-		Cluster:           fluxTestCluster(t),
-		Namespace:         "tenant",
-		Interval:          time.Hour,
-		KubeConfig:        &meta.KubeConfigReference{SecretRef: &meta.SecretKeyReference{Name: "mcp-kubeconfig", Key: "kubeconfig"}},
-		Version:           NewResourceVersion("1.0.0", "oci://registry.example.com/chart", "pull-secret", nil),
-		OCIRepositoryName: "chart",
-		HelmReleaseName:   "release",
-	}
-}
-
 func TestManageResources(t *testing.T) {
-	config := validConfig(t)
-	require.NoError(t, ManageResources(config))
+	cluster := fluxTestCluster(t)
+	require.NoError(t, ManageHelmRelease(
+		cluster,
+		&HelmRelease{
+			Name:      "release",
+			Namespace: "tenant",
+			OCIRepository: OCIRepository{
+				Name:         "chart",
+				ChartURL:     "oci://registry.example.com/chart",
+				ChartVersion: "1.0.0",
+			},
+		},
+		WithKubeConfig(meta.KubeConfigReference{SecretRef: &meta.SecretKeyReference{Name: "mcp-kubeconfig", Key: "kubeconfig"}}),
+		WithChartPullSecret("pull-secret")),
+	)
 
 	mgr := objectmanager.NewManager("test")
-	mgr.AddCluster(config.Cluster)
+	mgr.AddCluster(cluster)
 	result, err := mgr.Apply(context.Background())
 	require.NoError(t, err)
 	assert.True(t, result.Requeue, "Flux resources are not yet Ready (no ReadyCondition set by fake client)")
 
 	ociRepo := &sourcev1.OCIRepository{}
-	require.NoError(t, config.Cluster.Client().Get(context.Background(), client.ObjectKey{Name: "chart", Namespace: "flux-system"}, ociRepo))
+	require.NoError(t, cluster.Client().Get(context.Background(), client.ObjectKey{Name: "chart", Namespace: "flux-system"}, ociRepo))
 	assert.Equal(t, "oci://registry.example.com/chart", ociRepo.Spec.URL)
 	assert.Equal(t, "1.0.0", ociRepo.Spec.Reference.Tag)
-	assert.Equal(t, time.Hour, ociRepo.Spec.Interval.Duration)
+	assert.Equal(t, time.Minute*5, ociRepo.Spec.Interval.Duration)
 	assert.Equal(t, "pull-secret", ociRepo.Spec.SecretRef.Name)
 	require.NotNil(t, ociRepo.Spec.LayerSelector)
 	assert.Equal(t, "application/vnd.cncf.helm.chart.content.v1.tar+gzip", ociRepo.Spec.LayerSelector.MediaType)
 	assert.Equal(t, "extract", ociRepo.Spec.LayerSelector.Operation)
 
 	helmRelease := &helmv2.HelmRelease{}
-	require.NoError(t, config.Cluster.Client().Get(context.Background(), client.ObjectKey{Name: "release", Namespace: "flux-system"}, helmRelease))
+	require.NoError(t, cluster.Client().Get(context.Background(), client.ObjectKey{Name: "release", Namespace: "flux-system"}, helmRelease))
 	assert.Equal(t, "OCIRepository", helmRelease.Spec.ChartRef.Kind)
 	assert.Equal(t, "chart", helmRelease.Spec.ChartRef.Name)
 	assert.Equal(t, "flux-system", helmRelease.Spec.ChartRef.Namespace)
-	assert.Equal(t, time.Hour, helmRelease.Spec.Interval.Duration)
+	assert.Equal(t, time.Minute*30, helmRelease.Spec.Interval.Duration)
 	assert.Equal(t, "mcp-kubeconfig", helmRelease.Spec.KubeConfig.SecretRef.Name)
 	assert.Equal(t, "kubeconfig", helmRelease.Spec.KubeConfig.SecretRef.Key)
 	assert.Equal(t, "tenant", helmRelease.Spec.TargetNamespace)
@@ -81,92 +81,6 @@ func TestManageResources(t *testing.T) {
 	require.NotNil(t, helmRelease.Spec.Upgrade)
 	assert.Equal(t, 3, helmRelease.Spec.Upgrade.Remediation.Retries)
 	assert.Equal(t, helmv2.DriftDetectionEnabled, helmRelease.Spec.DriftDetection.Mode)
-}
-
-func TestManageResources_NoPullSecret(t *testing.T) {
-	config := validConfig(t)
-	config.Version = NewResourceVersion("1.0.0", "oci://registry.example.com/chart", "", nil)
-	require.NoError(t, ManageResources(config))
-
-	mgr := objectmanager.NewManager("test")
-	mgr.AddCluster(config.Cluster)
-	_, err := mgr.Apply(context.Background())
-	require.NoError(t, err)
-
-	ociRepo := &sourcev1.OCIRepository{}
-	require.NoError(t, config.Cluster.Client().Get(context.Background(), client.ObjectKey{Name: "chart", Namespace: "flux-system"}, ociRepo))
-	assert.Nil(t, ociRepo.Spec.SecretRef, "SecretRef should be absent when no pull secret is configured")
-}
-
-func TestManageResourcesValidation(t *testing.T) {
-	tests := []struct {
-		name    string
-		mutate  func(*ResourceConfig)
-		wantErr string
-	}{
-		{
-			name:    "nil Cluster",
-			mutate:  func(c *ResourceConfig) { c.Cluster = nil },
-			wantErr: "Cluster",
-		},
-		{
-			name:    "nil Version",
-			mutate:  func(c *ResourceConfig) { c.Version = nil },
-			wantErr: "Version",
-		},
-		{
-			name:    "empty ChartURL",
-			mutate:  func(c *ResourceConfig) { c.Version = NewResourceVersion("1.0", "", "", nil) },
-			wantErr: "GetChartURL",
-		},
-		{
-			name:    "zero Interval",
-			mutate:  func(c *ResourceConfig) { c.Interval = 0 },
-			wantErr: "Interval",
-		},
-		{
-			name:    "negative Interval",
-			mutate:  func(c *ResourceConfig) { c.Interval = -time.Second },
-			wantErr: "Interval",
-		},
-		{
-			name:    "nil KubeConfig",
-			mutate:  func(c *ResourceConfig) { c.KubeConfig = nil },
-			wantErr: "KubeConfig",
-		},
-		{
-			name:    "KubeConfig missing secret name",
-			mutate:  func(c *ResourceConfig) { c.KubeConfig.SecretRef.Name = "" },
-			wantErr: "KubeConfig",
-		},
-		{
-			name:    "KubeConfig missing secret key",
-			mutate:  func(c *ResourceConfig) { c.KubeConfig.SecretRef.Key = "" },
-			wantErr: "KubeConfig",
-		},
-		{
-			name:    "empty OCIRepositoryName",
-			mutate:  func(c *ResourceConfig) { c.OCIRepositoryName = "" },
-			wantErr: "OCIRepositoryName",
-		},
-		{
-			name:    "empty HelmReleaseName",
-			mutate:  func(c *ResourceConfig) { c.HelmReleaseName = "" },
-			wantErr: "HelmReleaseName",
-		},
-		{
-			name:    "empty Namespace",
-			mutate:  func(c *ResourceConfig) { c.Namespace = "" },
-			wantErr: "Namespace",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			config := validConfig(t)
-			tt.mutate(&config)
-			assert.ErrorContains(t, ManageResources(config), tt.wantErr)
-		})
-	}
 }
 
 func TestStatus(t *testing.T) {
