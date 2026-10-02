@@ -36,8 +36,8 @@ type HelmRelease struct {
 	Name string
 	// Namespace defines the target/storage namespace of the flux HelmRelease
 	Namespace string
-	// OCIRepository defines the Helm chart source
-	OCIRepository OCIRepository
+	// ChartSource contains the Helm chart and has to be an OCI repository in OpenControlPlane
+	ChartSource OCIRepository
 
 	// optional fields
 	values *apiextensionsv1.JSON
@@ -50,14 +50,14 @@ type HelmRelease struct {
 func (release *HelmRelease) defaultOptions() {
 	// based on https://fluxcd.io/flux/components/helm/helmreleases/#recommended-settings
 	release.interval = time.Minute * 30
-	release.OCIRepository.interval = time.Minute * 5
+	release.ChartSource.interval = time.Minute * 5
 }
 
 type Option func(*HelmRelease)
 
 func WithChartPullSecret(secret string) Option {
 	return func(o *HelmRelease) {
-		o.OCIRepository.chartPullSecret = secret
+		o.ChartSource.chartPullSecret = secret
 	}
 }
 
@@ -69,7 +69,7 @@ func WithKubeConfig(kubeconfig meta.KubeConfigReference) Option {
 
 func WithOCIRepoInterval(interval time.Duration) Option {
 	return func(r *HelmRelease) {
-		r.OCIRepository.interval = interval
+		r.ChartSource.interval = interval
 	}
 }
 
@@ -100,7 +100,7 @@ func ManageHelmRelease(cluster objectmanager.Cluster, helmRelease *HelmRelease, 
 	if err := helmRelease.validate(); err != nil {
 		return err
 	}
-	repoObj := ociRepoObject(cluster, helmRelease.OCIRepository)
+	repoObj := ociRepoObject(cluster, helmRelease.ChartSource)
 	cluster.AddObject(repoObj)
 	cluster.AddObject(helmRelease.object(cluster, repoObj))
 	return nil
@@ -113,7 +113,7 @@ func (r *HelmRelease) validate() error {
 	if r.Namespace == "" {
 		return fmt.Errorf("helm release namespace must not be empty")
 	}
-	ociRepo := r.OCIRepository
+	ociRepo := r.ChartSource
 	if ociRepo.Name == "" {
 		return fmt.Errorf("oci repository name must not be empty")
 	}
