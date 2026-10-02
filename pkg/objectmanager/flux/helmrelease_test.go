@@ -39,7 +39,7 @@ func TestManageResources(t *testing.T) {
 		&HelmRelease{
 			Name:      "release",
 			Namespace: "tenant",
-			OCIRepository: OCIRepository{
+			ChartSource: OCIRepository{
 				Name:         "chart",
 				ChartURL:     "oci://registry.example.com/chart",
 				ChartVersion: "1.0.0",
