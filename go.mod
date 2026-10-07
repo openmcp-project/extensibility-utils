@@ -1,6 +1,6 @@
 module github.com/openmcp-project/extensibility-utils
 
-go 1.26.5
+go 1.27.1
 
 require (
 	github.com/fluxcd/helm-controller/api v1.6.5
