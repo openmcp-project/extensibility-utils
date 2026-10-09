@@ -56,8 +56,8 @@ func (release *HelmRelease) defaultOptions() {
 type Option func(*HelmRelease)
 
 func WithChartPullSecret(secret string) Option {
-	return func(o *HelmRelease) {
-		o.ChartSource.chartPullSecret = secret
+	return func(r *HelmRelease) {
+		r.ChartSource.chartPullSecret = secret
 	}
 }
 
