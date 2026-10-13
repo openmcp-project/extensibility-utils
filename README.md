@@ -32,14 +32,8 @@ Core package for managing Kubernetes objects across clusters.
 
 Provides helpers for deploying Helm charts through Flux.
 
-**Key Types:**
-- `ResourceVersion`: Interface for chart version information
-- `ResourceConfig`: Configuration for Flux resources
-- `ManageResources()`: Function to register OCIRepository and HelmRelease
-
-**Supported Resources:**
-- `HelmRelease` - Managed Helm release deployment
-- `OCIRepository` - OCI registry source for Helm charts
+**Key Functions:**
+- `ManageHelmRelease()`: Function to register a HelmRelease with a OCIRepository source
 
 ### `pkg/secret`
 
@@ -49,22 +43,6 @@ Utilities for managing Kubernetes secrets across clusters.
 - `ManagePullSecret()`: Register an image-pull secret copy
 - `NewCleaner()`: Create a cleaner for managed pull secrets
 - `PrefixName()`: Prefix and validate secret names to Kubernetes limits
-
-### `pkg/internal`
-
-Internal utilities for object management.
-
-**Key Features:**
-- Label management with `app.kubernetes.io/managed-by` label
-- Service provider filtering for managed objects
-
-## Dependencies
-
-This library requires:
-- Go 1.26.5+
-- Kubernetes 1.36+
-- Flux CD v2 (helm-controller, source-controller)
-- controller-runtime v0.24+
 
 ## Support, Feedback, Contributing
 
