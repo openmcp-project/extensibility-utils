@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/extensibility-utils/pkg/objectmanager"
@@ -187,8 +188,44 @@ func (r *resolver) ResolveByName(ctx context.Context, discId, version, component
 	return Resource{}, fmt.Errorf("component %s not found", componentName)
 }
 
-func (r *resolver) ResolveByType(ctx context.Context, discId, version, componentName string, resourceType string) (Resource, error) {
-	return Resource{}, nil
+func searchComponent(components []Component, componentName, version string) (Component, error) {
+	for _, component := range components {
+		if component.Name == componentName && component.Version == version {
+			return component, nil
+		}
+	}
+	return Component{}, fmt.Errorf("could not find component %s", componentName)
+}
+
+type matchFunc func(v2.Resource) bool
+
+func getResource(component Component, matchFunc matchFunc) (Resource, error) {
+	for _, resource := range component.Resources {
+		if matchFunc(resource) {
+			err := validateResourceType(resource.Type)
+			if err != nil {
+				return Resource{}, fmt.Errorf("failed to valudate resource type %s: %w", resource.Name, err)
+			}
+			access, err := decodeOCIAccess(resource)
+			if err != nil {
+				return Resource{}, fmt.Errorf("could not decode OCI access of resource %s: %w", resource.Name, err)
+			}
+			return Resource{
+				Name:      resource.Name,
+				Type:      resource.Type,
+				AccessURL: access.ImageReference,
+			}, nil
+		}
+	}
+	return Resource{}, fmt.Errorf("no matching resource was found")
+}
+
+func byName(name string) func(v2.Resource) bool {
+	return func(r v2.Resource) bool { return r.Name == name }
+}
+
+func byType(resourceType string) func(v2.Resource) bool {
+	return func(r v2.Resource) bool { return r.Type == resourceType }
 }
 
 func (r *resolver) fetchDiscovery(ctx context.Context, id string) (ocmv1alpha1.Discovery, error) {
@@ -213,7 +250,7 @@ func parseDiscovery(discovery ocmv1alpha1.Discovery) ([]Component, error) {
 	for _, raw := range discovery.Status.Components {
 		var desc v2.Descriptor
 		if err := json.Unmarshal(raw.Raw, &desc); err != nil {
-			return nil, fmt.Errorf("discovery %q: parse component descriptor: %w", discovery.Name, err)
+			return nil, fmt.Errorf("failed to parse discovery %s: %w", discovery.Name, err)
 		}
 		component := Component{
 			Name:      desc.Component.Name,
