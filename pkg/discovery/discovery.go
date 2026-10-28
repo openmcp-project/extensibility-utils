@@ -17,6 +17,26 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type ResourceType = string
+
+const (
+	ResourceTypeImage     ResourceType = "image"
+	ResourceTypeHelmChart ResourceType = "helmChart"
+)
+
+var allowedResourceTypes = map[ResourceType]struct{}{
+	ResourceTypeImage:     {},
+	ResourceTypeHelmChart: {},
+}
+
+func validateResourceType(t ResourceType) error {
+	_, ok := allowedResourceTypes[t]
+	if !ok {
+		return fmt.Errorf("unsupported resource type %s: must be one of %v", t, maps.Keys(allowedResourceTypes))
+	}
+	return nil
+}
+
 type Resolver interface {
 	Apply(ctx context.Context) (bool, error)
 	ResolveByName(ctx context.Context, discId, version, componentName string, resourceName string) (Resource, error)
@@ -146,6 +166,10 @@ func (r *resolver) ResolveByName(ctx context.Context, discId, version, component
 		if component.Name == componentName && component.Version == version {
 			for _, resource := range component.Resources {
 				if resource.Name == resourceName {
+					err := validateResourceType(resource.Type)
+					if err != nil {
+						return Resource{}, fmt.Errorf("failed to valudate resource type %s: %w", resource.Name, err)
+					}
 					access, err := decodeOCIAccess(resource)
 					if err != nil {
 						return Resource{}, fmt.Errorf("could not decode OCI access of resource %s: %w", resource.Name, err)
