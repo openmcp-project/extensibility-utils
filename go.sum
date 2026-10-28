@@ -105,6 +105,10 @@ github.com/onsi/ginkgo/v2 v2.33.0 h1:C8gBA6Uc2ZEubiV+SXiu5tZnMTwEmXHgkJwGozKtZf8
 github.com/onsi/ginkgo/v2 v2.33.0/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU9kNcA44=
 github.com/onsi/gomega v1.44.0 h1:eAiGl3Pw5jz5GQdDff0BcxYpAX1JxW8xD7mFUuwNfZQ=
 github.com/onsi/gomega v1.44.0/go.mod h1:e/C2HwaZ1DhvjzXXuFhcR7hY7Sh9pl7MmoWKEjzwcdA=
+github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
+github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
+github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
+github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
 github.com/openmcp-project/controller-utils v0.33.2 h1:uanfYESayx6JALKor3wkIjja3Hq1pTq1VGB/KKPlCgY=
 github.com/openmcp-project/controller-utils v0.33.2/go.mod h1:hwfKYzTzYjC2vI0q7e1EE35UuPzJJ2gk4GK01x21GyI=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
@@ -186,6 +190,8 @@ k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 h1:jVkFFVfXdXP74B/zbO3hM3hpSFD0x
 k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3/go.mod h1:M2s5JB1lIYP3jzZdorPLHXIPJzt9vv2muW5a6L9DtNM=
 ocm.software/open-component-model/bindings/go v0.19.1 h1:AoOT4EcdYBZn2Hqyu1VlAZ611k5HsWyBjzO7AE5Xj3E=
 ocm.software/open-component-model/bindings/go v0.19.1/go.mod h1:/hlta+pNYIqQLKG8jG7CzcTqFubKYkHfi/w5mFy+Wkw=
+oras.land/oras-go/v2 v2.6.2 h1:N04RXngAp1LJKTG6ifz3xHPipasEkWr+hFmInja5YKo=
+oras.land/oras-go/v2 v2.6.2/go.mod h1:PlTtg4JTDJkDe8yVHpM2wz7/YDc00GVas+i4jAW2TZ4=
 sigs.k8s.io/controller-runtime v0.25.2 h1:bEkK3PVOIVK9X8QWLGVhJgmFc++47vfT6wakSzAOLsQ=
 sigs.k8s.io/controller-runtime v0.25.2/go.mod h1:4QqLdT6z/L6Olj8JJCtvztid4/fnIiYsfaTFScegctc=
 sigs.k8s.io/json v0.0.0-20260909141634-11ed52e25bc5 h1:k9jo7ED/fsfOcz3L1P20P5tjTNtsdQNwMOG2aKzHrl8=
