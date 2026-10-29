@@ -40,8 +40,7 @@ func validateResourceType(t ResourceType) error {
 
 type Resolver interface {
 	Apply(ctx context.Context) (bool, error)
-	ResolveByName(ctx context.Context, discId, version, componentName string, resourceName string) (Resource, error)
-	ResolveByType(ctx context.Context, discId, version, componentName string, resourceType string) (Resource, error)
+	Resolve(ctx context.Context, discId, version, componentName string, matchFunc MatchFunc) (Resource, error)
 }
 
 type resolver struct {
@@ -154,7 +153,7 @@ func discoveryStatus(object client.Object) objectmanager.ManagedObjectStatus {
 	return objectmanager.ManagedObjectStatus{Phase: objectmanager.StatusPhaseReady, Message: "Resource exists."}
 }
 
-func (r *resolver) ResolveByName(ctx context.Context, discId, version, componentName string, resourceName string) (Resource, error) {
+func (r *resolver) Resolve(ctx context.Context, discId, version, componentName string, matchFunc MatchFunc) (Resource, error) {
 	discovery, err := r.fetchDiscovery(ctx, discId)
 	if err != nil {
 		return Resource{}, fmt.Errorf("failed to fetch discovery %s: %w", discId, err)
@@ -163,29 +162,15 @@ func (r *resolver) ResolveByName(ctx context.Context, discId, version, component
 	if err != nil {
 		return Resource{}, fmt.Errorf("failed to parse discovery %s: %w", discId, err)
 	}
-	for _, component := range components {
-		if component.Name == componentName && component.Version == version {
-			for _, resource := range component.Resources {
-				if resource.Name == resourceName {
-					err := validateResourceType(resource.Type)
-					if err != nil {
-						return Resource{}, fmt.Errorf("failed to valudate resource type %s: %w", resource.Name, err)
-					}
-					access, err := decodeOCIAccess(resource)
-					if err != nil {
-						return Resource{}, fmt.Errorf("could not decode OCI access of resource %s: %w", resource.Name, err)
-					}
-					return Resource{
-						Name:      resource.Name,
-						Type:      resource.Type,
-						AccessURL: access.ImageReference,
-					}, nil
-				}
-			}
-			return Resource{}, fmt.Errorf("resource %s not found", resourceName)
-		}
+	component, err := searchComponent(components, componentName, version)
+	if err != nil {
+		return Resource{}, fmt.Errorf("failed to find component %s: %w", componentName, err)
 	}
-	return Resource{}, fmt.Errorf("component %s not found", componentName)
+	resource, err := getResource(component, matchFunc)
+	if err != nil {
+		return Resource{}, fmt.Errorf("resource not found in component %s: %w", componentName, err)
+	}
+	return resource, nil
 }
 
 func searchComponent(components []Component, componentName, version string) (Component, error) {
@@ -197,9 +182,9 @@ func searchComponent(components []Component, componentName, version string) (Com
 	return Component{}, fmt.Errorf("could not find component %s", componentName)
 }
 
-type matchFunc func(v2.Resource) bool
+type MatchFunc func(v2.Resource) bool
 
-func getResource(component Component, matchFunc matchFunc) (Resource, error) {
+func getResource(component Component, matchFunc MatchFunc) (Resource, error) {
 	for _, resource := range component.Resources {
 		if matchFunc(resource) {
 			err := validateResourceType(resource.Type)
@@ -220,11 +205,11 @@ func getResource(component Component, matchFunc matchFunc) (Resource, error) {
 	return Resource{}, fmt.Errorf("no matching resource was found")
 }
 
-func byName(name string) func(v2.Resource) bool {
-	return func(r v2.Resource) bool { return r.Name == name }
+func ByName(resourceName string) func(v2.Resource) bool {
+	return func(r v2.Resource) bool { return r.Name == resourceName }
 }
 
-func byType(resourceType string) func(v2.Resource) bool {
+func ByType(resourceType string) func(v2.Resource) bool {
 	return func(r v2.Resource) bool { return r.Type == resourceType }
 }
 
