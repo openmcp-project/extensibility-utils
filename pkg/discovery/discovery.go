@@ -162,11 +162,14 @@ func (r *resolver) Resolve(ctx context.Context, discId, version, componentName s
 	if err != nil {
 		return Resource{}, fmt.Errorf("failed to parse discovery %s: %w", discId, err)
 	}
-	component, err := searchComponent(components, componentName, version)
-	if err != nil {
-		return Resource{}, fmt.Errorf("failed to find component %s: %w", componentName, err)
+	if componentName != "" {
+		component, err := searchComponent(components, componentName, version)
+		if err != nil {
+			return Resource{}, fmt.Errorf("failed to find component %s: %w", componentName, err)
+		}
+		components = []Component{component}
 	}
-	resource, err := getResource(component, matchFunc)
+	resource, err := getResource(components, matchFunc)
 	if err != nil {
 		return Resource{}, fmt.Errorf("resource not found in component %s: %w", componentName, err)
 	}
@@ -184,25 +187,27 @@ func searchComponent(components []Component, componentName, version string) (Com
 
 type MatchFunc func(v2.Resource) bool
 
-func getResource(component Component, matchFunc MatchFunc) (Resource, error) {
-	for _, resource := range component.Resources {
-		if matchFunc(resource) {
-			err := validateResourceType(resource.Type)
-			if err != nil {
-				return Resource{}, fmt.Errorf("failed to valudate resource type %s: %w", resource.Name, err)
+func getResource(components []Component, matchFunc MatchFunc) (Resource, error) {
+	for _, component := range components {
+		for _, resource := range component.Resources {
+			if matchFunc(resource) {
+				err := validateResourceType(resource.Type)
+				if err != nil {
+					return Resource{}, fmt.Errorf("failed to valudate resource type %s: %w", resource.Name, err)
+				}
+				access, err := decodeOCIAccess(resource)
+				if err != nil {
+					return Resource{}, fmt.Errorf("could not decode OCI access of resource %s: %w", resource.Name, err)
+				}
+				return Resource{
+					Name:      resource.Name,
+					Type:      resource.Type,
+					AccessURL: access.ImageReference,
+				}, nil
 			}
-			access, err := decodeOCIAccess(resource)
-			if err != nil {
-				return Resource{}, fmt.Errorf("could not decode OCI access of resource %s: %w", resource.Name, err)
-			}
-			return Resource{
-				Name:      resource.Name,
-				Type:      resource.Type,
-				AccessURL: access.ImageReference,
-			}, nil
 		}
 	}
-	return Resource{}, fmt.Errorf("no matching resource was found")
+	return Resource{}, fmt.Errorf("no matching component or resource was found")
 }
 
 func ByName(resourceName string) func(v2.Resource) bool {
