@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/extensibility-utils/pkg/objectmanager"
@@ -19,24 +18,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type ResourceType = string
+type ResourceType string
 
 const (
 	ResourceTypeImage     ResourceType = "image"
 	ResourceTypeHelmChart ResourceType = "helmChart"
 )
 
-var allowedResourceTypes = map[ResourceType]struct{}{
-	ResourceTypeImage:     {},
-	ResourceTypeHelmChart: {},
-}
-
 func validateResourceType(t ResourceType) error {
-	_, ok := allowedResourceTypes[t]
-	if !ok {
-		return fmt.Errorf("unsupported resource type %s: must be one of %v", t, maps.Keys(allowedResourceTypes))
+	switch t {
+	case ResourceTypeImage, ResourceTypeHelmChart:
+		return nil
+	default:
+		return fmt.Errorf("unsupported resource type %s: must be one of [%s, %s]", t, ResourceTypeImage, ResourceTypeHelmChart)
 	}
-	return nil
 }
 
 type Resolver interface {
@@ -197,7 +192,7 @@ func getResource(components []Component, matchFunc MatchFunc) (Resource, error) 
 	for _, component := range components {
 		for _, resource := range component.Resources {
 			if matchFunc(resource) {
-				err := validateResourceType(resource.Type)
+				err := validateResourceType(ResourceType(resource.Type))
 				if err != nil {
 					return Resource{}, fmt.Errorf("failed to valudate resource type %s: %w", resource.Name, err)
 				}
@@ -221,7 +216,7 @@ func ByName(resourceName string) func(v2.Resource) bool {
 }
 
 func ByType(resourceType string) func(v2.Resource) bool {
-	return func(r v2.Resource) bool { return r.Type == resourceType }
+	return func(r v2.Resource) bool { return r.Type == string(resourceType) }
 }
 
 func (r *resolver) fetchDiscovery(ctx context.Context, id string) (ocmv1alpha1.Discovery, error) {
