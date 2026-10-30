@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 
@@ -98,7 +99,7 @@ func (r *resolver) Apply(ctx context.Context) (bool, error) {
 	mgr.AddCluster(platformCluster)
 	rr, err := mgr.Apply(ctx)
 	if err != nil {
-		return false, fmt.Errorf("applying discovery objects failed: %w", err)
+		return false, fmt.Errorf("failed to apply discovery objects: %w", err)
 	}
 	return rr.Requeue, nil
 }
@@ -173,6 +174,11 @@ func (r *resolver) Resolve(ctx context.Context, discId, version, componentName s
 	if err != nil {
 		return Resource{}, fmt.Errorf("resource not found in component %s: %w", componentName, err)
 	}
+	secret, err := getResourceCredentials(ctx, r.cluster.Client(), discovery.Namespace, resource.AccessURL, discovery.GetEffectiveOCMConfig())
+	if err != nil && !errors.Is(err, ErrNoCredentialSecret) {
+		return Resource{}, fmt.Errorf("credential lookup failed for resource %s: %w", resource.Name, err)
+	}
+	resource.PullSecret = secret
 	return resource, nil
 }
 
