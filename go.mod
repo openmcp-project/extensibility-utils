@@ -4,8 +4,8 @@ go 1.27.3
 
 require (
 	github.com/fluxcd/helm-controller/api v1.6.5
-	github.com/fluxcd/pkg/apis/meta v1.35.0
-	github.com/fluxcd/pkg/runtime v0.117.0
+	github.com/fluxcd/pkg/apis/meta v1.38.0
+	github.com/fluxcd/pkg/runtime v0.122.0
 	github.com/fluxcd/source-controller/api v1.9.6
 	github.com/openmcp-project/controller-utils v0.33.3
 	github.com/stretchr/testify v1.12.1
@@ -22,8 +22,8 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
-	github.com/fluxcd/pkg/apis/acl v0.11.0 // indirect
-	github.com/fluxcd/pkg/apis/kustomize v1.21.0 // indirect
+	github.com/fluxcd/pkg/apis/acl v0.12.0 // indirect
+	github.com/fluxcd/pkg/apis/kustomize v1.23.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
@@ -51,16 +51,16 @@ require (
 	github.com/onsi/gomega v1.44.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_golang v1.24.1 // indirect
+	github.com/prometheus/client_golang v1.25.0 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
-	github.com/prometheus/common v0.71.0 // indirect
+	github.com/prometheus/common v0.72.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.61.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
+	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
