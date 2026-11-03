@@ -1,14 +1,15 @@
 package discovery
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/extensibility-utils/pkg/objectmanager"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v2 "ocm.software/open-component-model/bindings/go/descriptor/v2"
@@ -37,6 +38,7 @@ func validateResourceType(t ResourceType) error {
 type Resolver interface {
 	Apply(ctx context.Context) (bool, error)
 	Resolve(ctx context.Context, discId, version, componentName string, matchFunc MatchFunc) (Resource, error)
+	Credentials(ctx context.Context, discId string) (*corev1.LocalObjectReference, error)
 }
 
 type resolver struct {
@@ -65,17 +67,15 @@ type DiscoveryConfig struct {
 }
 
 type Component struct {
-	Name       string
-	Version    string
-	PullSecret string
-	Resources  []v2.Resource
+	Name      string
+	Version   string
+	Resources []v2.Resource
 }
 
 type Resource struct {
-	Name       string
-	Type       string
-	AccessURL  string
-	PullSecret string
+	Name      string
+	Type      string
+	AccessURL string
 }
 
 func NewResolver(cfg Config, c *clusters.Cluster) Resolver {
@@ -149,6 +149,26 @@ func discoveryStatus(object client.Object) objectmanager.ManagedObjectStatus {
 	return objectmanager.ManagedObjectStatus{Phase: objectmanager.StatusPhaseReady, Message: "Resource exists."}
 }
 
+type MatchFunc func(v2.Resource) bool
+
+func ByName(resourceName string) func(v2.Resource) bool {
+	return func(r v2.Resource) bool { return r.Name == resourceName }
+}
+
+func ByType(resourceType string) func(v2.Resource) bool {
+	return func(r v2.Resource) bool { return r.Type == string(resourceType) }
+}
+func ByLabel(key string, value json.RawMessage) func(v2.Resource) bool {
+	return func(r v2.Resource) bool {
+		for _, l := range r.Labels {
+			if l.Name == key && bytes.Equal(l.Value, value) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
 func (r *resolver) Resolve(ctx context.Context, discId, version, componentName string, matchFunc MatchFunc) (Resource, error) {
 	discovery, err := r.fetchDiscovery(ctx, discId)
 	if err != nil {
@@ -169,11 +189,6 @@ func (r *resolver) Resolve(ctx context.Context, discId, version, componentName s
 	if err != nil {
 		return Resource{}, fmt.Errorf("resource not found in component %s: %w", componentName, err)
 	}
-	secret, err := getResourceCredentials(ctx, r.cluster.Client(), discovery.Namespace, resource.AccessURL, discovery.GetEffectiveOCMConfig())
-	if err != nil && !errors.Is(err, ErrNoCredentialSecret) {
-		return Resource{}, fmt.Errorf("credential lookup failed for resource %s: %w", resource.Name, err)
-	}
-	resource.PullSecret = secret
 	return resource, nil
 }
 
@@ -186,15 +201,13 @@ func searchComponent(components []Component, componentName, version string) (Com
 	return Component{}, fmt.Errorf("could not find component %s", componentName)
 }
 
-type MatchFunc func(v2.Resource) bool
-
 func getResource(components []Component, matchFunc MatchFunc) (Resource, error) {
 	for _, component := range components {
 		for _, resource := range component.Resources {
 			if matchFunc(resource) {
 				err := validateResourceType(ResourceType(resource.Type))
 				if err != nil {
-					return Resource{}, fmt.Errorf("failed to valudate resource type %s: %w", resource.Name, err)
+					return Resource{}, fmt.Errorf("failed to validate resource type %s: %w", resource.Name, err)
 				}
 				access, err := decodeOCIAccess(resource)
 				if err != nil {
@@ -209,14 +222,6 @@ func getResource(components []Component, matchFunc MatchFunc) (Resource, error) 
 		}
 	}
 	return Resource{}, fmt.Errorf("no matching component or resource was found")
-}
-
-func ByName(resourceName string) func(v2.Resource) bool {
-	return func(r v2.Resource) bool { return r.Name == resourceName }
-}
-
-func ByType(resourceType string) func(v2.Resource) bool {
-	return func(r v2.Resource) bool { return r.Type == string(resourceType) }
 }
 
 func (r *resolver) fetchDiscovery(ctx context.Context, id string) (ocmv1alpha1.Discovery, error) {
