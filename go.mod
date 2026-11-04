@@ -3,10 +3,10 @@ module github.com/openmcp-project/extensibility-utils
 go 1.27.3
 
 require (
-	github.com/fluxcd/helm-controller/api v1.6.5
+	github.com/fluxcd/helm-controller/api v1.7.1
 	github.com/fluxcd/pkg/apis/meta v1.38.0
 	github.com/fluxcd/pkg/runtime v0.122.0
-	github.com/fluxcd/source-controller/api v1.9.6
+	github.com/fluxcd/source-controller/api v1.10.0
 	github.com/openmcp-project/controller-utils v0.33.3
 	github.com/stretchr/testify v1.12.1
 	k8s.io/api v0.37.2
