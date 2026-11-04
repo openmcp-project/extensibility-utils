@@ -149,7 +149,29 @@ func discoveryStatus(object client.Object) objectmanager.ManagedObjectStatus {
 	return objectmanager.ManagedObjectStatus{Phase: objectmanager.StatusPhaseReady, Message: "Resource exists."}
 }
 
-type MatchFunc func(v2.Resource) bool
+func (r *resolver) Credentials(ctx context.Context, discId string) (*corev1.LocalObjectReference, error) {
+	disc, err := r.fetchDiscovery(ctx, discId)
+	cluster := r.cluster.Cluster()
+	reader := cluster.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch discovery %s: %w", discId, err)
+	}
+	configs := disc.GetEffectiveOCMConfig()
+	for _, config := range configs {
+		if config.Kind != "Secret" {
+			continue
+		}
+		secret := v1.Secret{}
+		reader.Get(ctx, client.ObjectKey{Name: config.Name, Namespace: config.Namespace}, &secret)
+		if secret.Type != corev1.SecretTypeDockerConfigJson {
+			continue
+		}
+		return &corev1.LocalObjectReference{Name: config.Name}, nil
+	}
+	return nil, nil
+}
+
+type ResourceMatchFunc func(v2.Resource) bool
 
 func ByName(resourceName string) func(v2.Resource) bool {
 	return func(r v2.Resource) bool { return r.Name == resourceName }
