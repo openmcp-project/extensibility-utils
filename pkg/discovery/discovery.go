@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"slices"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/extensibility-utils/pkg/objectmanager"
@@ -40,6 +41,7 @@ type Resolver interface {
 	Apply(ctx context.Context) (bool, error)
 	Resolve(ctx context.Context, discId, version string, componentMatchFunc ComponentMatchFunc, matchFunc ResourceMatchFunc) (Resource, error)
 	Credentials(ctx context.Context, discId string) (*corev1.LocalObjectReference, error)
+	ListVersions(ctx context.Context, discId string, matchFunc ComponentMatchFunc) ([]string, error)
 }
 
 type resolver struct {
@@ -171,6 +173,26 @@ func (r *resolver) Credentials(ctx context.Context, discId string) (*corev1.Loca
 		return &corev1.LocalObjectReference{Name: config.Name}, nil
 	}
 	return nil, nil
+}
+
+func (r *resolver) ListVersions(ctx context.Context, discId string, matchFunc ComponentMatchFunc) ([]string, error) {
+	discovery, err := r.fetchDiscovery(ctx, discId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch discovery %s: %w", discId, err)
+	}
+	components, err := parseDiscovery(discovery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse discovery %s: %w", discId, err)
+	}
+	var availableVersions []string
+	for _, component := range components {
+		if matchFunc == nil || matchFunc(component) {
+			availableVersions = append(availableVersions, component.Version)
+		}
+	}
+	slices.Sort(availableVersions)
+	slices.Reverse(availableVersions)
+	return availableVersions, nil
 }
 
 type ResourceMatchFunc func(v2.Resource) bool

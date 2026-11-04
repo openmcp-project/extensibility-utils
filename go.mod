@@ -8,7 +8,6 @@ require (
 	github.com/fluxcd/pkg/runtime v0.117.0
 	github.com/fluxcd/source-controller/api v1.9.6
 	github.com/openmcp-project/controller-utils v0.33.3
-	github.com/openmcp-project/openmcp-operator/api v1.4.4
 	github.com/stretchr/testify v1.12.1
 	k8s.io/api v0.37.1
 	k8s.io/apiextensions-apiserver v0.37.1
