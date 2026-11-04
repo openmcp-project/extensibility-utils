@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/extensibility-utils/pkg/objectmanager"
@@ -37,7 +38,7 @@ func validateResourceType(t ResourceType) error {
 
 type Resolver interface {
 	Apply(ctx context.Context) (bool, error)
-	Resolve(ctx context.Context, discId, version, componentName string, matchFunc MatchFunc) (Resource, error)
+	Resolve(ctx context.Context, discId, version string, componentMatchFunc ComponentMatchFunc, matchFunc ResourceMatchFunc) (Resource, error)
 	Credentials(ctx context.Context, discId string) (*corev1.LocalObjectReference, error)
 }
 
@@ -70,6 +71,7 @@ type Component struct {
 	Name      string
 	Version   string
 	Resources []v2.Resource
+	Labels    []v2.Label
 }
 
 type Resource struct {
@@ -173,14 +175,14 @@ func (r *resolver) Credentials(ctx context.Context, discId string) (*corev1.Loca
 
 type ResourceMatchFunc func(v2.Resource) bool
 
-func ByName(resourceName string) func(v2.Resource) bool {
+func ResourceByName(resourceName string) func(v2.Resource) bool {
 	return func(r v2.Resource) bool { return r.Name == resourceName }
 }
 
-func ByType(resourceType string) func(v2.Resource) bool {
+func ResourceByType(resourceType string) func(v2.Resource) bool {
 	return func(r v2.Resource) bool { return r.Type == string(resourceType) }
 }
-func ByLabel(key string, value json.RawMessage) func(v2.Resource) bool {
+func ResourceByLabel(key string, value json.RawMessage) func(v2.Resource) bool {
 	return func(r v2.Resource) bool {
 		for _, l := range r.Labels {
 			if l.Name == key && bytes.Equal(l.Value, value) {
@@ -191,7 +193,27 @@ func ByLabel(key string, value json.RawMessage) func(v2.Resource) bool {
 	}
 }
 
-func (r *resolver) Resolve(ctx context.Context, discId, version, componentName string, matchFunc MatchFunc) (Resource, error) {
+type ComponentMatchFunc func(Component) bool
+
+func ComponentByName(componentName string) func(Component) bool {
+	return func(c Component) bool { return c.Name == componentName }
+}
+
+func ComponentByShortName(shortName string) func(Component) bool {
+	return func(c Component) bool { return path.Base(c.Name) == shortName }
+}
+func ComponentByLabel(key string, value json.RawMessage) func(Component) bool {
+	return func(c Component) bool {
+		for _, l := range c.Labels {
+			if l.Name == key && bytes.Equal(l.Value, value) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func (r *resolver) Resolve(ctx context.Context, discId, version string, componentMatchFunc ComponentMatchFunc, resourceMatchFunc ResourceMatchFunc) (Resource, error) {
 	discovery, err := r.fetchDiscovery(ctx, discId)
 	if err != nil {
 		return Resource{}, fmt.Errorf("failed to fetch discovery %s: %w", discId, err)
@@ -200,50 +222,16 @@ func (r *resolver) Resolve(ctx context.Context, discId, version, componentName s
 	if err != nil {
 		return Resource{}, fmt.Errorf("failed to parse discovery %s: %w", discId, err)
 	}
-	if componentName != "" {
-		component, err := searchComponent(components, componentName, version)
-		if err != nil {
-			return Resource{}, fmt.Errorf("failed to find component %s: %w", componentName, err)
-		}
-		components = []Component{component}
-	}
-	resource, err := getResource(components, matchFunc)
+	component, err := searchComponent(components, componentMatchFunc, version)
 	if err != nil {
-		return Resource{}, fmt.Errorf("resource not found in component %s: %w", componentName, err)
+		return Resource{}, fmt.Errorf("failed to find component: %w", err)
+	}
+	components = []Component{component}
+	resource, err := getResource(components, resourceMatchFunc)
+	if err != nil {
+		return Resource{}, fmt.Errorf("resource not found in component: %w", err)
 	}
 	return resource, nil
-}
-
-func searchComponent(components []Component, componentName, version string) (Component, error) {
-	for _, component := range components {
-		if component.Name == componentName && component.Version == version {
-			return component, nil
-		}
-	}
-	return Component{}, fmt.Errorf("could not find component %s", componentName)
-}
-
-func getResource(components []Component, matchFunc MatchFunc) (Resource, error) {
-	for _, component := range components {
-		for _, resource := range component.Resources {
-			if matchFunc(resource) {
-				err := validateResourceType(ResourceType(resource.Type))
-				if err != nil {
-					return Resource{}, fmt.Errorf("failed to validate resource type %s: %w", resource.Name, err)
-				}
-				access, err := decodeOCIAccess(resource)
-				if err != nil {
-					return Resource{}, fmt.Errorf("could not decode OCI access of resource %s: %w", resource.Name, err)
-				}
-				return Resource{
-					Name:      resource.Name,
-					Type:      resource.Type,
-					AccessURL: access.ImageReference,
-				}, nil
-			}
-		}
-	}
-	return Resource{}, fmt.Errorf("no matching component or resource was found")
 }
 
 func (r *resolver) fetchDiscovery(ctx context.Context, id string) (ocmv1alpha1.Discovery, error) {
@@ -274,10 +262,43 @@ func parseDiscovery(discovery ocmv1alpha1.Discovery) ([]Component, error) {
 			Name:      desc.Component.Name,
 			Version:   desc.Component.Version,
 			Resources: desc.Component.Resources,
+			Labels:    desc.Component.Labels,
 		}
 		components = append(components, component)
 	}
 	return components, nil
+}
+
+func searchComponent(components []Component, matchFunc ComponentMatchFunc, version string) (Component, error) {
+	for _, component := range components {
+		if (matchFunc == nil || matchFunc(component)) && component.Version == version {
+			return component, nil
+		}
+	}
+	return Component{}, fmt.Errorf("no matching component was found")
+}
+
+func getResource(components []Component, matchFunc ResourceMatchFunc) (Resource, error) {
+	for _, component := range components {
+		for _, resource := range component.Resources {
+			if matchFunc(resource) {
+				err := validateResourceType(ResourceType(resource.Type))
+				if err != nil {
+					return Resource{}, fmt.Errorf("failed to validate resource type %s: %w", resource.Name, err)
+				}
+				access, err := decodeOCIAccess(resource)
+				if err != nil {
+					return Resource{}, fmt.Errorf("could not decode OCI access of resource %s: %w", resource.Name, err)
+				}
+				return Resource{
+					Name:      resource.Name,
+					Type:      resource.Type,
+					AccessURL: access.ImageReference,
+				}, nil
+			}
+		}
+	}
+	return Resource{}, fmt.Errorf("no matching component or resource was found")
 }
 
 func decodeOCIAccess(resource v2.Resource) (ociv1.OCIImage, error) {
@@ -291,26 +312,4 @@ func decodeOCIAccess(resource v2.Resource) (ociv1.OCIImage, error) {
 
 func prefixDiscoveryName(discoveryName string, providerName string) string {
 	return fmt.Sprintf("sp-%s-%s", providerName, discoveryName)
-}
-
-func (r *resolver) Credentials(ctx context.Context, discId string) (*corev1.LocalObjectReference, error) {
-	disc, err := r.fetchDiscovery(ctx, discId)
-	cluster := r.cluster.Cluster()
-	reader := cluster.GetClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch discovery %s: %w", discId, err)
-	}
-	configs := disc.GetEffectiveOCMConfig()
-	for _, config := range configs {
-		if config.Kind != "Secret" {
-			continue
-		}
-		secret := v1.Secret{}
-		reader.Get(ctx, client.ObjectKey{Name: config.Name, Namespace: config.Namespace}, &secret)
-		if secret.Type != corev1.SecretTypeDockerConfigJson {
-			continue
-		}
-		return &corev1.LocalObjectReference{Name: config.Name}, nil
-	}
-	return nil, nil
 }
