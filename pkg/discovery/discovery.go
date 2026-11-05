@@ -45,21 +45,16 @@ type Resolver interface {
 }
 
 type resolver struct {
-	cluster         *clusters.Cluster
-	serviceProvider string
-	namespace       string
-	providerconfig  ProviderConfig
-}
-
-type ProviderConfig interface {
-	client.Object
-	DiscoveryConfigs() []DiscoveryConfig
+	cluster          *clusters.Cluster
+	serviceProvider  string
+	namespace        string
+	discoveryconfigs []DiscoveryConfig
 }
 
 type Config struct {
-	ServiceProvider string
-	Namespace       string
-	ProviderConfig  ProviderConfig
+	ServiceProvider  string
+	Namespace        string
+	DiscoveryConfigs []DiscoveryConfig
 }
 
 type DiscoveryConfig struct {
@@ -84,16 +79,16 @@ type Resource struct {
 
 func NewResolver(cfg Config, c *clusters.Cluster) Resolver {
 	return &resolver{
-		cluster:         c,
-		serviceProvider: cfg.ServiceProvider,
-		namespace:       cfg.Namespace,
-		providerconfig:  cfg.ProviderConfig,
+		cluster:          c,
+		serviceProvider:  cfg.ServiceProvider,
+		namespace:        cfg.Namespace,
+		discoveryconfigs: cfg.DiscoveryConfigs,
 	}
 }
 
 func (r *resolver) Apply(ctx context.Context) (bool, error) {
 	platformCluster := objectmanager.NewCluster(r.cluster, r.namespace, objectmanager.PlatformCluster)
-	manageDiscoveries(r.providerconfig.DiscoveryConfigs(), r.namespace, platformCluster, r.serviceProvider)
+	manageDiscoveries(r.discoveryconfigs, r.namespace, platformCluster, r.serviceProvider)
 	mgr := objectmanager.NewManager(r.serviceProvider)
 	mgr.AddCluster(platformCluster)
 	rr, err := mgr.Apply(ctx)
