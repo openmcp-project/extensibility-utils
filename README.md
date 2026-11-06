@@ -50,7 +50,7 @@ Utilities for managing Kubernetes secrets across clusters.
 Controller that keeps a ServiceAccount token from a ManagedControlPlane in a Secret on a workload cluster,
 independent of the service provider's main reconcile loop. The Secret is created by the caller; the
 controller only writes the `token`, `ca.crt` and `namespace` keys and the
-`<service-provider>.services.openmcp.cloud/token-creation-time` and `.../token-expiration-time`
+`<service-provider>.services.open-control-plane.io/token-creation-time` and `.../token-expiration-time`
 annotations. Tokens are refreshed at 80% of their actual validity (the API server may grant a shorter
 token than requested). A Secret that has a token but no creation annotation (e.g. written by an older
 provider version) is refreshed on the first reconcile.

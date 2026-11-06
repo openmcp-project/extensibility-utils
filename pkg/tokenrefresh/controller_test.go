@@ -47,6 +47,7 @@ type testConfig struct {
 	owner        bool
 	bindingNotOK bool
 	clustersErr  error
+	clustersNil  bool
 	sa           bool
 	secret       *corev1.Secret
 	tokenTTL     time.Duration // lifetime returned by the fake API server, 0 = requested lifetime
@@ -107,6 +108,9 @@ func newTestEnv(t *testing.T, cfg testConfig) *testEnv {
 			if cfg.clustersErr != nil {
 				return nil, nil, cfg.clustersErr
 			}
+			if cfg.clustersNil {
+				return nil, nil, nil
+			}
 			return mcp, workload, nil
 		},
 		Binding: func(_ *corev1.ConfigMap) (Binding, bool) {
@@ -155,9 +159,16 @@ func TestReconcile(t *testing.T) {
 			cfg:  testConfig{sa: true, secret: secretWithToken("", time.Time{}, time.Time{})},
 		},
 		{
-			name:    "binding not ready returns an error",
-			cfg:     testConfig{owner: true, bindingNotOK: true, sa: true, secret: secretWithToken("", time.Time{}, time.Time{})},
-			wantErr: true,
+			name:           "binding not ready requeues",
+			cfg:            testConfig{owner: true, bindingNotOK: true, sa: true, secret: secretWithToken("", time.Time{}, time.Time{})},
+			wantRequeueMin: DefaultRetryInterval,
+			wantRequeueMax: DefaultRetryInterval,
+		},
+		{
+			name:           "clusters not ready requeues",
+			cfg:            testConfig{owner: true, clustersNil: true, sa: true, secret: secretWithToken("", time.Time{}, time.Time{})},
+			wantRequeueMin: DefaultRetryInterval,
+			wantRequeueMax: DefaultRetryInterval,
 		},
 		{
 			name:    "unavailable clusters return an error",
@@ -274,7 +285,22 @@ func TestReconcile(t *testing.T) {
 }
 
 func TestExpirationAnnotation(t *testing.T) {
-	assert.Equal(t, "velero.services.openmcp.cloud/token-expiration-time", ExpirationAnnotation("velero"))
+	assert.Equal(t, "velero.services.open-control-plane.io/token-expiration-time", ExpirationAnnotation("velero"))
+}
+
+func TestEnsureTokenGuards(t *testing.T) {
+	ctx := t.Context()
+	secret := &corev1.Secret{}
+	binding := Binding{ServiceAccount: saKey, Secret: secKey}
+
+	// A nil mcp cluster is rejected before any cluster access (which would otherwise nil-panic).
+	_, err := EnsureToken(ctx, nil, secret, binding, serviceProvider, DefaultTokenLifetime)
+	assert.ErrorContains(t, err, "mcp cluster must not be nil")
+
+	// A lifetime below the API-server minimum is rejected.
+	mcp := clusters.NewTestClusterFromClient("mcp", fake.NewClientBuilder().WithScheme(newScheme(t)).Build())
+	_, err = EnsureToken(ctx, mcp, secret, binding, serviceProvider, MinTokenLifetime-time.Second)
+	assert.ErrorContains(t, err, "must not be less than")
 }
 
 func TestValidate(t *testing.T) {

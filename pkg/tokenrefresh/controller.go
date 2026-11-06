@@ -39,12 +39,12 @@ const (
 
 // ExpirationAnnotation returns the annotation key under which the token expiration time is stored on the Secret.
 func ExpirationAnnotation(serviceProvider string) string {
-	return fmt.Sprintf("%s.services.openmcp.cloud/token-expiration-time", serviceProvider)
+	return fmt.Sprintf("%s.services.open-control-plane.io/token-expiration-time", serviceProvider)
 }
 
 // CreationAnnotation returns the annotation key under which the token creation time is stored on the Secret.
 func CreationAnnotation(serviceProvider string) string {
-	return fmt.Sprintf("%s.services.openmcp.cloud/token-creation-time", serviceProvider)
+	return fmt.Sprintf("%s.services.open-control-plane.io/token-creation-time", serviceProvider)
 }
 
 // Binding identifies the ServiceAccount on the MCP cluster and the Secret on the workload cluster that receives its token.
@@ -136,8 +136,7 @@ func (r *Reconciler[T]) renewalTime(secret *corev1.Secret) (renewal time.Time, o
 }
 
 // Reconcile refreshes the token if needed or if it's missing and requeues until the next renewal time.
-// Transient failures (object, cluster or secret not ready, or a token mint error) are returned as errors,
-// so controller-runtime requeues them with its default backoff.
+// Transient failures (object, cluster or secret not ready, or a token mint error) are requeued after the retry r.retryInterval().
 func (r *Reconciler[T]) Reconcile(ctx context.Context, req reconcile.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -150,14 +149,16 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req reconcile.Request) (c
 	}
 	binding, ok := r.Binding(obj)
 	if !ok {
-		return ctrl.Result{}, errors.New("token binding not ready")
+		logger.Info("token binding not ready, requeueing")
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 	mcp, workload, err := r.Clusters(ctx, req)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("clusters not available: %w", err)
 	}
 	if mcp == nil || workload == nil {
-		return ctrl.Result{}, errors.New("clusters not ready")
+		logger.Info("clusters not ready, requeueing")
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 
 	secret := &corev1.Secret{}
@@ -186,6 +187,12 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req reconcile.Request) (c
 // EnsureToken mints a token for binding.ServiceAccount on the mcp cluster and writes it into secret in memory, without persisting it.
 // Callers may use it to mint the first token while creating the Secret. It returns the minted token.
 func EnsureToken(ctx context.Context, mcp *clusters.Cluster, secret *corev1.Secret, binding Binding, serviceProvider string, lifetime time.Duration) (*clusteraccess.ServiceAccountToken, error) {
+	if mcp == nil {
+		return nil, errors.New("mcp cluster must not be nil")
+	}
+	if lifetime < MinTokenLifetime {
+		return nil, fmt.Errorf("lifetime must not be less than %s", MinTokenLifetime)
+	}
 	caData, err := caData(mcp)
 	if err != nil {
 		return nil, err
