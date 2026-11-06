@@ -16,26 +16,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v2 "ocm.software/open-component-model/bindings/go/descriptor/v2"
 	ocmv1alpha1 "ocm.software/open-component-model/bindings/go/kubernetes/controller/api/v1alpha1"
-	oci "ocm.software/open-component-model/bindings/go/oci/spec/access"
-	ociv1 "ocm.software/open-component-model/bindings/go/oci/spec/access/v1"
+	ociaccess "ocm.software/open-component-model/bindings/go/oci/spec/access"
+	ociaccessv1 "ocm.software/open-component-model/bindings/go/oci/spec/access/v1"
+	ocirepov1 "ocm.software/open-component-model/bindings/go/oci/spec/repository/v1/oci"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-type ResourceType string
-
-const (
-	ResourceTypeImage     ResourceType = "image"
-	ResourceTypeHelmChart ResourceType = "helmChart"
-)
-
-func validateResourceType(t ResourceType) error {
-	switch t {
-	case ResourceTypeImage, ResourceTypeHelmChart:
-		return nil
-	default:
-		return fmt.Errorf("unsupported resource type %s: must be one of [%s, %s]", t, ResourceTypeImage, ResourceTypeHelmChart)
-	}
-}
 
 type Resolver interface {
 	Apply(ctx context.Context) (bool, error)
@@ -103,7 +88,7 @@ func manageDiscoveries(discoveryConfigs []DiscoveryConfig, namespace string, clu
 		discovery := objectmanager.NewObject(
 			&ocmv1alpha1.Discovery{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      prefixDiscoveryName(discConfig.ID, serviceProvider),
+					Name:      discoveryObjectName(discConfig.ID, serviceProvider),
 					Namespace: namespace,
 				},
 				Spec: ocmv1alpha1.DiscoverySpec{
@@ -150,8 +135,7 @@ func discoveryStatus(object client.Object) objectmanager.ManagedObjectStatus {
 
 func (r *resolver) Credentials(ctx context.Context, discId string) (*corev1.LocalObjectReference, error) {
 	disc, err := r.fetchDiscovery(ctx, discId)
-	cluster := r.cluster.Cluster()
-	reader := cluster.GetClient()
+	reader := r.cluster.Cluster().GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch discovery %s: %w", discId, err)
 	}
@@ -233,47 +217,88 @@ func ComponentByLabel(key string, value json.RawMessage) func(Component) bool {
 func (r *resolver) Resolve(ctx context.Context, discId, version string, componentMatchFunc ComponentMatchFunc, resourceMatchFunc ResourceMatchFunc) (Resource, error) {
 	discovery, err := r.fetchDiscovery(ctx, discId)
 	if err != nil {
-		return Resource{}, fmt.Errorf("failed to fetch discovery %s: %w", discId, err)
+		return Resource{}, fmt.Errorf("failed to fetch discovery %q: %w", discId, err)
+	}
+	baseURL, err := r.fetchBaseURL(ctx, "testcomponent")
+	if err != nil {
+		return Resource{}, fmt.Errorf("failed to fetch base URL %q: %w", discId, err)
 	}
 	components, err := parseDiscovery(discovery)
 	if err != nil {
-		return Resource{}, fmt.Errorf("failed to parse discovery %s: %w", discId, err)
+		return Resource{}, fmt.Errorf("failed to parse discovery %q: %w", discId, err)
 	}
-	component, err := searchComponent(components, componentMatchFunc, version)
-	if err != nil {
-		return Resource{}, fmt.Errorf("failed to find component: %w", err)
+	component, ok := findComponent(components, componentMatchFunc, version)
+	if !ok {
+		return Resource{}, fmt.Errorf("failed to find component for version %q", version)
 	}
-	components = []Component{component}
-	resource, err := getResource(components, resourceMatchFunc)
+	resource, err := findResource(component, baseURL, resourceMatchFunc)
 	if err != nil {
-		return Resource{}, fmt.Errorf("resource not found in component: %w", err)
+		return Resource{}, fmt.Errorf("failed to find resource in discovery %q: %w", discId, err)
 	}
 	return resource, nil
 }
 
-func (r *resolver) fetchDiscovery(ctx context.Context, id string) (ocmv1alpha1.Discovery, error) {
-	discovery := ocmv1alpha1.Discovery{}
-	cluster := r.cluster.Cluster()
-	reader := cluster.GetClient()
-	err := reader.Get(ctx, client.ObjectKey{Namespace: r.namespace, Name: prefixDiscoveryName(id, r.serviceProvider)}, &discovery)
+func (r *resolver) fetchBaseURL(ctx context.Context, releasechannel string) (string, error) {
+	component := ocmv1alpha1.Component{}
+	reader := r.cluster.Cluster().GetClient()
+	err := reader.Get(ctx, client.ObjectKey{Namespace: r.namespace, Name: releasechannel}, &component)
 	if apierrors.IsNotFound(err) {
-		return ocmv1alpha1.Discovery{}, fmt.Errorf("discovery %s was not found", id)
+		return "", fmt.Errorf("releasechannel component %s/%s was not found", r.namespace, releasechannel)
 	}
 	if err != nil {
-		return ocmv1alpha1.Discovery{}, fmt.Errorf("error fetching discovery %s: %w", id, err)
+		return "", err
+	}
+	repository := ocmv1alpha1.Repository{}
+	err = reader.Get(ctx, client.ObjectKey{Namespace: r.namespace, Name: component.Spec.RepositoryRef.Name}, &repository)
+	if apierrors.IsNotFound(err) {
+		return "", fmt.Errorf("releasechannel repository %s/%s was not found", r.namespace, component.Spec.RepositoryRef.Name)
+	}
+	if err != nil {
+		return "", err
+	}
+	var repo ocirepov1.Repository
+	err = json.Unmarshal(repository.Spec.RepositorySpec.Raw, &repo)
+	if err != nil {
+		return "", err
+	}
+	// Check repo type correctly
+	if repo.Type.String() != "OCIRegistry" {
+		return "", fmt.Errorf("repo needs to be of type OCIRegistry")
+	}
+	if repo.SubPath != "" {
+		return fmt.Sprintf("%s/%s", repo.BaseUrl, repo.SubPath), nil
+	}
+	return repo.BaseUrl, nil
+
+}
+
+func (r *resolver) fetchDiscovery(ctx context.Context, id string) (ocmv1alpha1.Discovery, error) {
+	discovery := ocmv1alpha1.Discovery{}
+	reader := r.cluster.Cluster().GetClient()
+	err := reader.Get(ctx, client.ObjectKey{Namespace: r.namespace, Name: id}, &discovery)
+	if apierrors.IsNotFound(err) {
+		return ocmv1alpha1.Discovery{}, fmt.Errorf("discovery %q was not found", id)
+	}
+	if err != nil {
+		return ocmv1alpha1.Discovery{}, err
 	}
 	if discovery.Generation != discovery.Status.ObservedGeneration {
-		return ocmv1alpha1.Discovery{}, fmt.Errorf("discovery %s has not been observed for its current spec", id)
+		return ocmv1alpha1.Discovery{}, fmt.Errorf("discovery %q has not been observed for its current spec", id)
 	}
 	return discovery, nil
+}
+
+func discoveryObjectName(providerName string, discoveryID string) string {
+	return fmt.Sprintf("sp-%s-%s", providerName, discoveryID)
 }
 
 func parseDiscovery(discovery ocmv1alpha1.Discovery) ([]Component, error) {
 	components := make([]Component, 0, len(discovery.Status.Components))
 	for _, raw := range discovery.Status.Components {
 		var desc v2.Descriptor
-		if err := json.Unmarshal(raw.Raw, &desc); err != nil {
-			return nil, fmt.Errorf("failed to parse discovery %s: %w", discovery.Name, err)
+		err := json.Unmarshal(raw.Raw, &desc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal components of discovery %s: %w", discovery.Name, err)
 		}
 		component := Component{
 			Name:      desc.Component.Name,
@@ -286,47 +311,67 @@ func parseDiscovery(discovery ocmv1alpha1.Discovery) ([]Component, error) {
 	return components, nil
 }
 
-func searchComponent(components []Component, matchFunc ComponentMatchFunc, version string) (Component, error) {
+func findComponent(components []Component, matchFunc ComponentMatchFunc, version string) (Component, bool) {
 	for _, component := range components {
 		if (matchFunc == nil || matchFunc(component)) && component.Version == version {
-			return component, nil
+			return component, true
 		}
 	}
-	return Component{}, fmt.Errorf("no matching component was found")
+	return Component{}, false
 }
 
-func getResource(components []Component, matchFunc ResourceMatchFunc) (Resource, error) {
-	for _, component := range components {
-		for _, resource := range component.Resources {
-			if matchFunc(resource) {
-				err := validateResourceType(ResourceType(resource.Type))
-				if err != nil {
-					return Resource{}, fmt.Errorf("failed to validate resource type %s: %w", resource.Name, err)
-				}
-				access, err := decodeOCIAccess(resource)
-				if err != nil {
-					return Resource{}, fmt.Errorf("could not decode OCI access of resource %s: %w", resource.Name, err)
-				}
-				return Resource{
-					Name:      resource.Name,
-					Type:      resource.Type,
-					AccessURL: access.ImageReference,
-				}, nil
+func findResource(component Component, baseURL string, matchFunc ResourceMatchFunc) (Resource, error) {
+	if matchFunc == nil {
+		return Resource{}, fmt.Errorf("matchFunc must not be nil")
+	}
+	for _, resource := range component.Resources {
+		if matchFunc(resource) {
+			accessURL, err := decodeAccess(resource, baseURL, component.Name)
+			fmt.Println(accessURL)
+			if err != nil {
+				return Resource{}, fmt.Errorf("no matching resource was found")
 			}
+			return Resource{
+				Name:      resource.Name,
+				Type:      resource.Type,
+				AccessURL: accessURL,
+			}, nil
 		}
 	}
-	return Resource{}, fmt.Errorf("no matching component or resource was found")
+	return Resource{}, fmt.Errorf("no matching resource was found")
 }
 
-func decodeOCIAccess(resource v2.Resource) (ociv1.OCIImage, error) {
-	var img ociv1.OCIImage
-	err := oci.Scheme.Convert(resource.Access, &img)
-	if err != nil {
-		return ociv1.OCIImage{}, err
+func decodeAccess(resource v2.Resource, baseURL string, componentName string) (string, error) {
+	if resource.Access == nil {
+		return "", fmt.Errorf("resource has no access")
 	}
-	return img, nil
-}
 
-func prefixDiscoveryName(discoveryName string, providerName string) string {
-	return fmt.Sprintf("sp-%s-%s", providerName, discoveryName)
+	t := resource.Access.GetType()
+	switch {
+	case v2.Scheme.IsRegistered(t):
+		var blob v2.LocalBlob
+		err := v2.Scheme.Convert(resource.Access, &blob)
+		if err != nil {
+			return "", err
+		}
+		if blob.GlobalAccess != nil {
+			var img ociaccessv1.OCIImage
+			err := ociaccess.Scheme.Convert(blob.GlobalAccess, &img)
+			if err != nil {
+				return "", err
+			}
+			return img.ImageReference, nil
+		}
+		return fmt.Sprintf("%s/component-descriptors/%s@%s", baseURL, componentName, blob.LocalReference), nil
+
+	case ociaccess.Scheme.IsRegistered(t):
+		var img ociaccessv1.OCIImage
+		if err := ociaccess.Scheme.Convert(resource.Access, &img); err != nil {
+			return "", err
+		}
+		return img.ImageReference, nil
+
+	default:
+		return "", fmt.Errorf("unhandled access type: %s", t)
+	}
 }
