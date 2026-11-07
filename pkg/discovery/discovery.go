@@ -217,18 +217,17 @@ func (r *resolver) ListVersions(ctx context.Context, discId string, matchFunc Co
 	return availableVersions, nil
 }
 
-type ResourceMatchFunc func(v2.Resource) bool
-
-func ResourceByName(resourceName string) func(v2.Resource) bool {
-	return func(r v2.Resource) bool { return r.Name == resourceName }
+func byName[T any](getName func(T) string, name string) func(T) bool {
+	return func(t T) bool { return getName(t) == name }
 }
 
-func ResourceByType(resourceType string) func(v2.Resource) bool {
-	return func(r v2.Resource) bool { return r.Type == string(resourceType) }
+func byShortName[T any](getName func(T) string, name string) func(T) bool {
+	return func(t T) bool { return path.Base(getName(t)) == name }
 }
-func ResourceByLabel(key string, value json.RawMessage) func(v2.Resource) bool {
-	return func(r v2.Resource) bool {
-		for _, l := range r.Labels {
+
+func byLabel[T any](getLabels func(T) []v2.Label, key string, value json.RawMessage) func(T) bool {
+	return func(t T) bool {
+		for _, l := range getLabels(t) {
 			if l.Name == key && bytes.Equal(l.Value, value) {
 				return true
 			}
@@ -237,24 +236,29 @@ func ResourceByLabel(key string, value json.RawMessage) func(v2.Resource) bool {
 	}
 }
 
+type ResourceMatchFunc func(v2.Resource) bool
 type ComponentMatchFunc func(Component) bool
 
-func ComponentByName(componentName string) func(Component) bool {
-	return func(c Component) bool { return c.Name == componentName }
+var (
+	resourceName    = func(r v2.Resource) string { return r.Name }
+	resourceLabels  = func(r v2.Resource) []v2.Label { return r.Labels }
+	componentName   = func(c Component) string { return c.Name }
+	componentLabels = func(c Component) []v2.Label { return c.Labels }
+)
+
+func ResourceByName(name string) ResourceMatchFunc      { return byName(resourceName, name) }
+func ResourceByShortName(name string) ResourceMatchFunc { return byShortName(resourceName, name) }
+func ResourceByType(resourceType string) ResourceMatchFunc {
+	return func(r v2.Resource) bool { return r.Type == resourceType }
+}
+func ResourceByLabel(key string, value json.RawMessage) ResourceMatchFunc {
+	return byLabel(resourceLabels, key, value)
 }
 
-func ComponentByShortName(shortName string) func(Component) bool {
-	return func(c Component) bool { return path.Base(c.Name) == shortName }
-}
-func ComponentByLabel(key string, value json.RawMessage) func(Component) bool {
-	return func(c Component) bool {
-		for _, l := range c.Labels {
-			if l.Name == key && bytes.Equal(l.Value, value) {
-				return true
-			}
-		}
-		return false
-	}
+func ComponentByName(name string) ComponentMatchFunc      { return byName(componentName, name) }
+func ComponentByShortName(name string) ComponentMatchFunc { return byShortName(componentName, name) }
+func ComponentByLabel(key string, value json.RawMessage) ComponentMatchFunc {
+	return byLabel(componentLabels, key, value)
 }
 
 func (r *resolver) Resolve(ctx context.Context, discId, version string, componentMatchFunc ComponentMatchFunc, resourceMatchFunc ResourceMatchFunc) (Resource, error) {
