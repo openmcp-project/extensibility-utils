@@ -26,14 +26,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var ocmScheme = func() *runtime.Scheme {
-	s := runtime.NewScheme()
-	ocirepospec.MustAddToScheme(s)       // OCIRepository, OCI, oci
-	ocirepospec.MustAddLegacyToScheme(s) // OCIRegistry, ociRegistry
-	ociaccess.MustAddToScheme(s)         // OCIImage, OCIImageLayer, RelativeOCIReference
-	v2.MustAddToScheme(s)                // LocalBlob
-	return s
-}()
+var (
+	ociRepoScheme = func() *runtime.Scheme {
+		s := runtime.NewScheme()
+		ocirepospec.MustAddToScheme(s)
+		ocirepospec.MustAddLegacyToScheme(s)
+		return s
+	}()
+
+	ocmScheme = func() *runtime.Scheme {
+		s := runtime.NewScheme()
+		ociaccess.MustAddToScheme(s)
+		v2.MustAddToScheme(s)
+		return s
+	}()
+)
 
 type Resolver interface {
 	Apply(ctx context.Context) (bool, error)
@@ -394,7 +401,7 @@ func ociRepoFromComponent(component *ocmv1alpha1.Component) (*ocirepov1.Reposito
 		return nil, fmt.Errorf("failed to decode repositorySpec: %w", err)
 	}
 
-	ociRepo, err := As[*ocirepov1.Repository](ocmScheme, raw)
+	ociRepo, err := As[*ocirepov1.Repository](ociRepoScheme, raw)
 	if err != nil {
 		return nil, err
 	}
