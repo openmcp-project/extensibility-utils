@@ -11,6 +11,7 @@ import (
 
 	ocirepov1 "ocm.software/open-component-model/bindings/go/oci/spec/repository/v1/oci"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/extensibility-utils/pkg/objectmanager"
 	corev1 "k8s.io/api/core/v1"
@@ -50,7 +51,7 @@ type Resolver interface {
 	Credentials(ctx context.Context) (*corev1.LocalObjectReference, error)
 	// Resolve fetches the Discovery for discId, finds the component matching version and componentMatchFunc if not nil, then returns the first resource matching matchFunc.
 	Resolve(ctx context.Context, discId, version string, componentMatchFunc ComponentMatchFunc, matchFunc ResourceMatchFunc) (Resource, error)
-	// ListComponentVersions returns the available component versions for discId, optionally filtered by matchFunc, sorted newest first.
+	// ListComponentVersions returns the available component versions for discId, optionally filtered by matchFunc, sorted oldest first.
 	ListComponentVersions(ctx context.Context, discId string, matchFunc ComponentMatchFunc) ([]string, error)
 }
 
@@ -222,9 +223,23 @@ func (r *resolver) ListComponentVersions(ctx context.Context, discId string, mat
 			availableVersions = append(availableVersions, component.Version)
 		}
 	}
-	slices.Sort(availableVersions)
-	slices.Reverse(availableVersions)
+	slices.SortFunc(availableVersions, compareVersions)
 	return availableVersions, nil
+}
+
+func compareVersions(a, b string) int {
+	va, errA := semver.NewVersion(a)
+	vb, errB := semver.NewVersion(b)
+	switch {
+	case errA == nil && errB == nil:
+		return va.Compare(vb)
+	case errA == nil:
+		return -1
+	case errB == nil:
+		return 1
+	default:
+		return strings.Compare(a, b)
+	}
 }
 
 // ResourceMatchFunc returns true if the given OCM resource should be selected.

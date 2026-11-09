@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -372,6 +373,49 @@ func TestDecodeAccess(t *testing.T) {
 			}
 			if !tc.wantErr && got != tc.wantURL {
 				t.Errorf("got %q, want %q", got, tc.wantURL)
+			}
+		})
+	}
+}
+
+func TestCompareVersions(t *testing.T) {
+	tests := []struct {
+		name     string
+		versions []string
+		want     []string
+	}{
+		{
+			name:     "orders by patch",
+			versions: []string{"1.2.4", "1.2.3"},
+			want:     []string{"1.2.3", "1.2.4"},
+		},
+		{
+			name:     "multi-digit minor sorts semantically, not lexically",
+			versions: []string{"1.10.0", "1.9.0", "1.2.0"},
+			want:     []string{"1.2.0", "1.9.0", "1.10.0"},
+		},
+		{
+			name:     "v prefix is tolerated",
+			versions: []string{"v1.2.4", "1.2.3"},
+			want:     []string{"1.2.3", "v1.2.4"},
+		},
+		{
+			name:     "unparseable versions sort after valid ones lexicographically",
+			versions: []string{"notaversion-b", "1.2.0", "notaversion-a"},
+			want:     []string{"1.2.0", "notaversion-a", "notaversion-b"},
+		},
+		{
+			name:     "mixed",
+			versions: []string{"v1.10.0", "1.2.0", "notaversion-a", "1.9.0"},
+			want:     []string{"1.2.0", "1.9.0", "v1.10.0", "notaversion-a"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sorted := slices.Clone(tc.versions)
+			slices.SortFunc(sorted, compareVersions)
+			if !slices.Equal(sorted, tc.want) {
+				t.Errorf("sorted = %v, want %v", sorted, tc.want)
 			}
 		})
 	}
