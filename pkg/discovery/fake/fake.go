@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/openmcp-project/extensibility-utils/pkg/discovery"
 	corev1 "k8s.io/api/core/v1"
@@ -15,7 +16,6 @@ type Resolver struct {
 	requeue    bool
 	secret     *corev1.LocalObjectReference
 	components []Component
-	resources  []Resource
 
 	// Sets errors to return for interface functions
 	applyErr        error
@@ -23,6 +23,7 @@ type Resolver struct {
 	resolveErr      error
 	listVersionsErr error
 
+	// Override respective fake resolver behavior if custom behavior is required
 	ApplyFunc        func(ctx context.Context) (bool, error)
 	CredentialsFunc  func(ctx context.Context) (*corev1.LocalObjectReference, error)
 	ResolveFunc      func(ctx context.Context, discId, version string, componentMatchFunc discovery.ComponentMatchFunc, matchFunc discovery.ResourceMatchFunc) (discovery.Resource, error)
@@ -30,15 +31,15 @@ type Resolver struct {
 }
 
 type Component struct {
-	Name    string
-	Version string
-	Labels  map[string]json.RawMessage
+	Name      string
+	Version   string
+	Labels    map[string]json.RawMessage
+	Resources []Resource
 }
 
 type Resource struct {
 	Name      string
 	Type      string
-	Version   string
 	AccessURL string
 	Labels    map[string]json.RawMessage
 }
@@ -56,11 +57,6 @@ func (f *Resolver) WithRequeue(requeue bool) *Resolver {
 
 func (f *Resolver) WithCredentials(secret *corev1.LocalObjectReference) *Resolver {
 	f.secret = secret
-	return f
-}
-
-func (f *Resolver) WithResources(resources []Resource) *Resolver {
-	f.resources = resources
 	return f
 }
 
@@ -109,32 +105,27 @@ func (f *Resolver) Credentials(ctx context.Context) (*corev1.LocalObjectReferenc
 	return f.secret, nil
 }
 
-func (f *Resolver) Resolve(ctx context.Context, discId, version string, componentMatchFunc discovery.ComponentMatchFunc, matchFunc discovery.ResourceMatchFunc) (discovery.Resource, error) {
+func (f *Resolver) Resolve(ctx context.Context, discId, version string, componentMatchFunc discovery.ComponentMatchFunc, resourceMatchFunc discovery.ResourceMatchFunc) (discovery.Resource, error) {
 	if f.resolveErr != nil {
 		return discovery.Resource{}, f.resolveErr
 	}
 	if f.ResolveFunc != nil {
-		return f.ResolveFunc(ctx, discId, version, componentMatchFunc, matchFunc)
+		return f.ResolveFunc(ctx, discId, version, componentMatchFunc, resourceMatchFunc)
 	}
-	if matchFunc == nil {
+	if resourceMatchFunc == nil {
 		return discovery.Resource{}, fmt.Errorf("matchFunc must not be nil")
 	}
-	for _, r := range f.resources {
-		labels := make([]v2.Label, 0, len(r.Labels))
-		for k, v := range r.Labels {
-			labels = append(labels, v2.Label{Name: k, Value: v})
+	for _, c := range f.components {
+		if strings.TrimPrefix(c.Version, "v") != strings.TrimPrefix(version, "v") {
+			continue
 		}
-		candidate := v2.Resource{
-			ElementMeta: v2.ElementMeta{
-				ObjectMeta: v2.ObjectMeta{
-					Name:   r.Name,
-					Labels: labels,
-				},
-			},
-			Type: r.Type,
+		if componentMatchFunc != nil && !componentMatchFunc(toComponent(c)) {
+			continue
 		}
-		if matchFunc(candidate) {
-			return discovery.Resource{Name: r.Name, Type: r.Type, AccessURL: r.AccessURL}, nil
+		for _, r := range c.Resources {
+			if resourceMatchFunc(toResource(r)) {
+				return discovery.Resource{Name: r.Name, Type: r.Type, AccessURL: r.AccessURL}, nil
+			}
 		}
 	}
 	return discovery.Resource{}, fmt.Errorf("no resource found for version %q", version)
@@ -149,19 +140,38 @@ func (f *Resolver) ListComponentVersions(ctx context.Context, discId string, mat
 	}
 	var versions []string
 	for _, c := range f.components {
-		labels := make([]v2.Label, 0, len(c.Labels))
-		for k, v := range c.Labels {
-			labels = append(labels, v2.Label{Name: k, Value: v})
-		}
-		candidate := discovery.Component{
-			Name:    c.Name,
-			Version: c.Version,
-			Labels:  labels,
-		}
-		if matchFunc == nil || matchFunc(candidate) {
+		if matchFunc == nil || matchFunc(toComponent(c)) {
 			versions = append(versions, c.Version)
 		}
 	}
 	slices.SortFunc(versions, discovery.CompareVersions)
 	return versions, nil
+}
+
+func toLabels(in map[string]json.RawMessage) []v2.Label {
+	labels := make([]v2.Label, 0, len(in))
+	for k, v := range in {
+		labels = append(labels, v2.Label{Name: k, Value: v})
+	}
+	return labels
+}
+
+func toComponent(c Component) discovery.Component {
+	return discovery.Component{
+		Name:    c.Name,
+		Version: c.Version,
+		Labels:  toLabels(c.Labels),
+	}
+}
+
+func toResource(r Resource) v2.Resource {
+	return v2.Resource{
+		ElementMeta: v2.ElementMeta{
+			ObjectMeta: v2.ObjectMeta{
+				Name:   r.Name,
+				Labels: toLabels(r.Labels),
+			},
+		},
+		Type: r.Type,
+	}
 }
