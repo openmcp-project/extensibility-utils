@@ -50,10 +50,10 @@ type Resolver interface {
 	Apply(ctx context.Context) (bool, error)
 	// Credentials returns a reference to the first docker-config secret found in the releasechannels effective OCM config, or nil if none exists.
 	Credentials(ctx context.Context) (*corev1.LocalObjectReference, error)
-	// Resolve fetches the Discovery for discId, finds the component matching version and componentMatchFunc if not nil, then returns the first resource matching matchFunc.
-	Resolve(ctx context.Context, discId, version string, componentMatchFunc ComponentMatchFunc, matchFunc ResourceMatchFunc) (Resource, error)
+	// Resolve fetches the Discovery for discId, finds the component matching version and componentMatchFunc if not nil, then returns the first resource matching resourceMatchFunc.
+	Resolve(ctx context.Context, discId, version string, componentMatchFunc ComponentMatchFunc, resourceMatchFunc ResourceMatchFunc) (Resource, error)
 	// ListComponentVersions returns the available component versions for discId, optionally filtered by matchFunc, sorted oldest first.
-	ListComponentVersions(ctx context.Context, discId string, matchFunc ComponentMatchFunc) ([]string, error)
+	ListComponentVersions(ctx context.Context, discId string, componentMatchFunc ComponentMatchFunc) ([]string, error)
 }
 
 type resolver struct {
@@ -218,7 +218,7 @@ func (r *resolver) Credentials(ctx context.Context) (*corev1.LocalObjectReferenc
 	return nil, nil
 }
 
-func (r *resolver) ListComponentVersions(ctx context.Context, discId string, matchFunc ComponentMatchFunc) ([]string, error) {
+func (r *resolver) ListComponentVersions(ctx context.Context, discId string, componentMatchFunc ComponentMatchFunc) ([]string, error) {
 	discovery, err := r.fetchDiscovery(ctx, discId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch discovery %s: %w", discId, err)
@@ -229,7 +229,7 @@ func (r *resolver) ListComponentVersions(ctx context.Context, discId string, mat
 	}
 	var availableVersions []string
 	for _, component := range components {
-		if matchFunc == nil || matchFunc(component) {
+		if componentMatchFunc == nil || componentMatchFunc(component) {
 			availableVersions = append(availableVersions, component.Version)
 		}
 	}
@@ -369,9 +369,9 @@ func parseDiscovery(discovery ocmv1alpha1.Discovery) ([]Component, error) {
 	return components, nil
 }
 
-func findComponent(components []Component, matchFunc ComponentMatchFunc, version string) (Component, bool) {
+func findComponent(components []Component, componentMatchFunc ComponentMatchFunc, version string) (Component, bool) {
 	for _, component := range components {
-		if (matchFunc == nil || matchFunc(component)) && normalizeVersion(component.Version) == normalizeVersion(version) {
+		if (componentMatchFunc == nil || componentMatchFunc(component)) && normalizeVersion(component.Version) == normalizeVersion(version) {
 			return component, true
 		}
 	}
@@ -382,12 +382,12 @@ func normalizeVersion(version string) string {
 	return strings.TrimPrefix(version, "v")
 }
 
-func findResource(component Component, basePath string, matchFunc ResourceMatchFunc) (Resource, error) {
-	if matchFunc == nil {
+func findResource(component Component, basePath string, resourceMatchFunc ResourceMatchFunc) (Resource, error) {
+	if resourceMatchFunc == nil {
 		return Resource{}, fmt.Errorf("matchFunc must not be nil")
 	}
 	for _, resource := range component.Resources {
-		if matchFunc(resource) {
+		if resourceMatchFunc(resource) {
 			accessURL, err := decodeAccess(resource, basePath, component.Name)
 			if err != nil {
 				return Resource{}, fmt.Errorf("failed to decode access for resource %q: %w", resource.Name, err)
