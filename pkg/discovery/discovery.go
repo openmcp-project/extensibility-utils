@@ -229,11 +229,13 @@ func (r *resolver) ListComponentVersions(ctx context.Context, discId string, mat
 			availableVersions = append(availableVersions, component.Version)
 		}
 	}
-	slices.SortFunc(availableVersions, compareVersions)
+	slices.SortFunc(availableVersions, CompareVersions)
 	return availableVersions, nil
 }
 
-func compareVersions(a, b string) int {
+// CompareVersions orders two component versions oldest first.
+// Versions are compared semantically and versions that do not parse as semver are lexicographically sorted after valid ones.
+func CompareVersions(a, b string) int {
 	va, errA := semver.NewVersion(a)
 	vb, errB := semver.NewVersion(b)
 	switch {
@@ -365,11 +367,15 @@ func parseDiscovery(discovery ocmv1alpha1.Discovery) ([]Component, error) {
 
 func findComponent(components []Component, matchFunc ComponentMatchFunc, version string) (Component, bool) {
 	for _, component := range components {
-		if (matchFunc == nil || matchFunc(component)) && component.Version == version {
+		if (matchFunc == nil || matchFunc(component)) && normalizeVersion(component.Version) == normalizeVersion(version) {
 			return component, true
 		}
 	}
 	return Component{}, false
+}
+
+func normalizeVersion(version string) string {
+	return strings.TrimPrefix(version, "v")
 }
 
 func findResource(component Component, basePath string, matchFunc ResourceMatchFunc) (Resource, error) {

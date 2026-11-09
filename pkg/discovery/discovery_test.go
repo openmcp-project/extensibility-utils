@@ -413,7 +413,7 @@ func TestCompareVersions(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			sorted := slices.Clone(tc.versions)
-			slices.SortFunc(sorted, compareVersions)
+			slices.SortFunc(sorted, CompareVersions)
 			if !slices.Equal(sorted, tc.want) {
 				t.Errorf("sorted = %v, want %v", sorted, tc.want)
 			}

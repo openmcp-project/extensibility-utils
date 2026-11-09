@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/openmcp-project/extensibility-utils/pkg/discovery"
 	corev1 "k8s.io/api/core/v1"
@@ -115,6 +116,9 @@ func (f *Resolver) Resolve(ctx context.Context, discId, version string, componen
 	if f.ResolveFunc != nil {
 		return f.ResolveFunc(ctx, discId, version, componentMatchFunc, matchFunc)
 	}
+	if matchFunc == nil {
+		return discovery.Resource{}, fmt.Errorf("matchFunc must not be nil")
+	}
 	for _, r := range f.resources {
 		labels := make([]v2.Label, 0, len(r.Labels))
 		for k, v := range r.Labels {
@@ -130,7 +134,7 @@ func (f *Resolver) Resolve(ctx context.Context, discId, version string, componen
 			Type: r.Type,
 		}
 		if matchFunc(candidate) {
-			return discovery.Resource{Name: r.Name, AccessURL: r.AccessURL}, nil
+			return discovery.Resource{Name: r.Name, Type: r.Type, AccessURL: r.AccessURL}, nil
 		}
 	}
 	return discovery.Resource{}, fmt.Errorf("no resource found for version %q", version)
@@ -154,9 +158,10 @@ func (f *Resolver) ListComponentVersions(ctx context.Context, discId string, mat
 			Version: c.Version,
 			Labels:  labels,
 		}
-		if matchFunc(candidate) {
+		if matchFunc == nil || matchFunc(candidate) {
 			versions = append(versions, c.Version)
 		}
 	}
+	slices.SortFunc(versions, discovery.CompareVersions)
 	return versions, nil
 }
