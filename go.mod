@@ -4,7 +4,6 @@ go 1.27.3
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
-	ocm.software/open-component-model/bindings/go v0.19.1
 	github.com/fluxcd/helm-controller/api v1.7.1
 	github.com/fluxcd/pkg/apis/meta v1.38.0
 	github.com/fluxcd/pkg/runtime v0.122.0
@@ -15,6 +14,7 @@ require (
 	k8s.io/apiextensions-apiserver v0.37.2
 	k8s.io/apimachinery v0.37.2
 	k8s.io/client-go v0.37.2
+	ocm.software/open-component-model/bindings/go v0.19.1
 	sigs.k8s.io/controller-runtime v0.25.2
 )
 
