@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"slices"
@@ -191,6 +192,7 @@ func discoveryStatus(object client.Object) objectmanager.ManagedObjectStatus {
 func (r *resolver) Credentials(ctx context.Context) (*corev1.LocalObjectReference, error) {
 	reader := r.cluster.Cluster().GetClient()
 	configs := r.releasechannel.GetEffectiveOCMConfig()
+	var fetchErrs []error
 	for _, config := range configs {
 		if config.Kind != "Secret" {
 			continue
@@ -198,12 +200,16 @@ func (r *resolver) Credentials(ctx context.Context) (*corev1.LocalObjectReferenc
 		secret := corev1.Secret{}
 		err := reader.Get(ctx, client.ObjectKey{Name: config.Name, Namespace: config.Namespace}, &secret)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch secret %s/%s: %w", config.Namespace, config.Name, err)
+			fetchErrs = append(fetchErrs, fmt.Errorf("failed to fetch secret %s/%s: %w", config.Namespace, config.Name, err))
+			continue
 		}
 		if secret.Type != corev1.SecretTypeDockerConfigJson {
 			continue
 		}
 		return &corev1.LocalObjectReference{Name: config.Name}, nil
+	}
+	if len(fetchErrs) > 0 {
+		return nil, errors.Join(fetchErrs...)
 	}
 	return nil, nil
 }
