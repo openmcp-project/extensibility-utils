@@ -139,7 +139,7 @@ func ociRepoObject(cluster objectmanager.Cluster, config OCIRepository) objectma
 				return fmt.Errorf("expected *sourcev1.OCIRepository, got %T", object)
 			}
 			spec := sourcev1.OCIRepositorySpec{
-				Interval:  metav1.Duration{Duration: config.interval},
+				Interval:  &metav1.Duration{Duration: config.interval},
 				URL:       config.ChartURL,
 				Reference: &sourcev1.OCIRepositoryRef{Tag: config.ChartVersion},
 				LayerSelector: &sourcev1.OCILayerSelector{
