@@ -136,7 +136,7 @@ func (f *Resolver) Resolve(ctx context.Context, discId, version string, componen
 	return discovery.Resource{}, fmt.Errorf("no resource found for version %q", version)
 }
 
-func (f *Resolver) ListVersions(ctx context.Context, discId string, matchFunc discovery.ComponentMatchFunc) ([]string, error) {
+func (f *Resolver) ListComponentVersions(ctx context.Context, discId string, matchFunc discovery.ComponentMatchFunc) ([]string, error) {
 	if f.listVersionsErr != nil {
 		return nil, f.listVersionsErr
 	}

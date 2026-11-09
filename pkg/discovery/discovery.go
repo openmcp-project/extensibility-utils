@@ -46,7 +46,8 @@ type Resolver interface {
 	Apply(ctx context.Context) (bool, error)
 	Credentials(ctx context.Context) (*corev1.LocalObjectReference, error)
 	Resolve(ctx context.Context, discId, version string, componentMatchFunc ComponentMatchFunc, matchFunc ResourceMatchFunc) (Resource, error)
-	ListVersions(ctx context.Context, discId string, matchFunc ComponentMatchFunc) ([]string, error)
+	// ListComponentVersions returns the available component versions for discId, optionally filtered by matchFunc, sorted newest first.
+	ListComponentVersions(ctx context.Context, discId string, matchFunc ComponentMatchFunc) ([]string, error)
 }
 
 type resolver struct {
@@ -197,7 +198,7 @@ func (r *resolver) Credentials(ctx context.Context) (*corev1.LocalObjectReferenc
 	return nil, nil
 }
 
-func (r *resolver) ListVersions(ctx context.Context, discId string, matchFunc ComponentMatchFunc) ([]string, error) {
+func (r *resolver) ListComponentVersions(ctx context.Context, discId string, matchFunc ComponentMatchFunc) ([]string, error) {
 	discovery, err := r.fetchDiscovery(ctx, discId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch discovery %s: %w", discId, err)
