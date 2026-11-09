@@ -375,7 +375,7 @@ func decodeAccess(resource v2.Resource, basePath string, componentName string) (
 	switch a := obj.(type) {
 	case *v2.LocalBlob:
 		if a.GlobalAccess != nil {
-			img, err := As[*ociaccessv1.OCIImage](ocmScheme, a.GlobalAccess)
+			img, err := as[*ociaccessv1.OCIImage](ocmScheme, a.GlobalAccess)
 			if err != nil {
 				return "", err
 			}
@@ -402,7 +402,7 @@ func ociRepoFromComponent(component *ocmv1alpha1.Component) (*ocirepov1.Reposito
 		return nil, fmt.Errorf("failed to decode repositorySpec: %w", err)
 	}
 
-	ociRepo, err := As[*ocirepov1.Repository](ociRepoScheme, raw)
+	ociRepo, err := as[*ocirepov1.Repository](ociRepoScheme, raw)
 	if err != nil {
 		return nil, err
 	}
@@ -433,7 +433,7 @@ func componentDescriptorBase(repo *ocirepov1.Repository) (string, error) {
 	return basePath + "/" + ocmpath.DefaultComponentDescriptorPath, nil
 }
 
-func As[T runtime.Typed](scheme *runtime.Scheme, raw *runtime.Raw) (T, error) {
+func as[T runtime.Typed](scheme *runtime.Scheme, raw *runtime.Raw) (T, error) {
 	var zero T
 	obj, err := scheme.NewObject(raw.GetType())
 	if err != nil {
