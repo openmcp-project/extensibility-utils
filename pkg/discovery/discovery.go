@@ -197,10 +197,14 @@ func (r *resolver) Credentials(ctx context.Context) (*corev1.LocalObjectReferenc
 		if config.Kind != "Secret" {
 			continue
 		}
+		ns := config.Namespace
+		if ns == "" {
+			ns = r.namespace
+		}
 		secret := corev1.Secret{}
-		err := reader.Get(ctx, client.ObjectKey{Name: config.Name, Namespace: config.Namespace}, &secret)
+		err := reader.Get(ctx, client.ObjectKey{Name: config.Name, Namespace: ns}, &secret)
 		if err != nil {
-			fetchErrs = append(fetchErrs, fmt.Errorf("failed to fetch secret %s/%s: %w", config.Namespace, config.Name, err))
+			fetchErrs = append(fetchErrs, fmt.Errorf("failed to fetch secret %s/%s: %w", ns, config.Name, err))
 			continue
 		}
 		if secret.Type != corev1.SecretTypeDockerConfigJson {
