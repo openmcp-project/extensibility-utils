@@ -14,7 +14,6 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
-	"github.com/openmcp-project/extensibility-utils/pkg/objectmanager"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,6 +25,8 @@ import (
 	ocmpath "ocm.software/open-component-model/bindings/go/oci/spec/repository/path"
 	"ocm.software/open-component-model/bindings/go/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/openmcp-project/extensibility-utils/pkg/objectmanager"
 )
 
 var (

@@ -7,9 +7,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openmcp-project/extensibility-utils/pkg/discovery"
 	corev1 "k8s.io/api/core/v1"
 	v2 "ocm.software/open-component-model/bindings/go/descriptor/v2"
+
+	"github.com/openmcp-project/extensibility-utils/pkg/discovery"
 )
 
 type Resolver struct {
