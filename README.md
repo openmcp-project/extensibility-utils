@@ -44,6 +44,24 @@ Utilities for managing Kubernetes secrets across clusters.
 - `NewCleaner()`: Create a cleaner for managed pull secrets
 - `PrefixName()`: Prefix and validate secret names to Kubernetes limits
 
+### `pkg/discovery`
+
+Utilities to resolve OCM (Open Component Model) components and resources from `Discovery` objects on a release channel umbrella component.
+
+**Key Types:**
+- `Resolver`: Main interface for managing `Discovery` objects and resolving resources (Apply, Credentials, Resolve, ListComponentVersions)
+- `Config`: Configuration for `NewResolver` (service provider, namespace, release channel, discovery configs)
+- `Component`: A parsed OCM component descriptor entry (name, version, resources, labels)
+- `Resource`: A resolved OCM resource with a fully-qualified OCI access URL
+
+**Resolver Methods:**
+- `Apply()`: Create or update the `Discovery` objects on the platform cluster, returning true if a requeue is needed
+- `Credentials()`: Return a reference to the first docker-config secret in the release channel's effective OCM config, or nil if none exists
+- `Resolve()`: Fetch the `Discovery` for a given id, find the component matching the version and optional `ComponentMatchFunc`, then return the first resource matching the `ResourceMatchFunc`
+- `ListComponentVersions()`: Return the available component versions for a given id, optionally filtered by a `ComponentMatchFunc`, sorted oldest first
+
+A `fake.Resolver` (`pkg/discovery/fake`) is provided for testing consumers of the `Resolver` interface.
+
 ## Support, Feedback, Contributing
 
 This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/openmcp-project/repository-template/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](https://github.com/openmcp-project/.github/blob/main/CONTRIBUTING.md).
