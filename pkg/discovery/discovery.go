@@ -42,9 +42,13 @@ var (
 	}()
 )
 
+// Resolver manages Discovery objects and resolves OCM resources from them.
 type Resolver interface {
+	// Apply creates or updates the Discovery objects on the platform cluster and returns true if a requeue is needed.
 	Apply(ctx context.Context) (bool, error)
+	// Credentials returns a reference to the first docker-config secret found in the releasechannels effective OCM config, or nil if none exists.
 	Credentials(ctx context.Context) (*corev1.LocalObjectReference, error)
+	// Resolve fetches the Discovery for discId, finds the component matching version and componentMatchFunc if not nil, then returns the first resource matching matchFunc.
 	Resolve(ctx context.Context, discId, version string, componentMatchFunc ComponentMatchFunc, matchFunc ResourceMatchFunc) (Resource, error)
 	// ListComponentVersions returns the available component versions for discId, optionally filtered by matchFunc, sorted newest first.
 	ListComponentVersions(ctx context.Context, discId string, matchFunc ComponentMatchFunc) ([]string, error)
@@ -59,6 +63,7 @@ type resolver struct {
 	basePath         string
 }
 
+// Config holds the configuration for creating a new Resolver.
 type Config struct {
 	ServiceProvider  string
 	Namespace        string
@@ -66,12 +71,14 @@ type Config struct {
 	DiscoveryConfigs []DiscoveryConfig
 }
 
+// DiscoveryConfig defines a single Discovery object to be managed, with optional selectors to filter components and resources.
 type DiscoveryConfig struct {
 	ID                string
 	ComponentSelector *ocmv1alpha1.Selector
 	ResourceSelector  *ocmv1alpha1.Selector
 }
 
+// Component is a parsed OCM component descriptor entry with its name, version, resources, and labels.
 type Component struct {
 	Name      string
 	Version   string
@@ -79,12 +86,14 @@ type Component struct {
 	Labels    []v2.Label
 }
 
+// Resource is a resolved OCM resource with its name, type, and a fully-qualified OCI access URL.
 type Resource struct {
 	Name      string
 	Type      string
 	AccessURL string
 }
 
+// NewResolver creates a Resolver by fetching the named releasechannel Component and computing its OCI base path.
 func NewResolver(ctx context.Context, cfg Config, c *clusters.Cluster) (Resolver, error) {
 	releasechannel, err := fetchReleasechannel(ctx, c.Cluster().GetClient(), cfg.Releasechannel, cfg.Namespace)
 	if err != nil {
@@ -218,7 +227,10 @@ func (r *resolver) ListComponentVersions(ctx context.Context, discId string, mat
 	return availableVersions, nil
 }
 
+// ResourceMatchFunc returns true if the given OCM resource should be selected.
 type ResourceMatchFunc func(v2.Resource) bool
+
+// ComponentMatchFunc returns true if the given Component should be selected.
 type ComponentMatchFunc func(Component) bool
 
 func ResourceByName(name string) ResourceMatchFunc {
