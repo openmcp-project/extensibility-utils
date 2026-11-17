@@ -61,6 +61,7 @@ existing token untouched afterwards, so a pod mounting the Secret as a required 
 **Key Types:**
 - `Reconciler[T]`: Generic controller for the service provider API type `T`
 - `Binding`: ServiceAccount on the MCP cluster and Secret on the workload cluster
+- `BindingFunc`: Returns the `Binding` of an object, gets a context so it can read further objects (e.g. a provider config) to resolve it
 - `ClusterResolver`: Read-only function returning the MCP and workload cluster of an object
 
 **Key Functions:**

@@ -57,7 +57,8 @@ type Binding struct {
 type ClusterResolver func(ctx context.Context, req reconcile.Request) (mcp, workload *clusters.Cluster, err error)
 
 // BindingFunc returns the Binding for the given object. If ok is false, the object is not ready yet and is reconciled again later.
-type BindingFunc[T client.Object] func(obj T) (binding Binding, ok bool)
+// An error is returned to controller-runtime and retried with its default backoff, e.g. if a config needed to resolve the Binding can't be read.
+type BindingFunc[T client.Object] func(ctx context.Context, obj T) (binding Binding, ok bool, err error)
 
 // Reconciler refreshes the token in the target Secret before it expires. It only writes the token data and the
 // expiration annotation, the Secret itself has to be created by the caller, e.g. the service provider's main reconciler.
@@ -147,7 +148,10 @@ func (r *Reconciler[T]) Reconcile(ctx context.Context, req reconcile.Request) (c
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to get object: %w", err)
 	}
-	binding, ok := r.Binding(obj)
+	binding, ok, err := r.Binding(ctx, obj)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to resolve token binding: %w", err)
+	}
 	if !ok {
 		logger.Info("token binding not ready, requeueing")
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil

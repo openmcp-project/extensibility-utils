@@ -46,6 +46,7 @@ type testEnv struct {
 type testConfig struct {
 	owner        bool
 	bindingNotOK bool
+	bindingErr   error
 	clustersErr  error
 	clustersNil  bool
 	sa           bool
@@ -113,8 +114,11 @@ func newTestEnv(t *testing.T, cfg testConfig) *testEnv {
 			}
 			return mcp, workload, nil
 		},
-		Binding: func(_ *corev1.ConfigMap) (Binding, bool) {
-			return Binding{ServiceAccount: saKey, Secret: secKey}, !cfg.bindingNotOK
+		Binding: func(_ context.Context, _ *corev1.ConfigMap) (Binding, bool, error) {
+			if cfg.bindingErr != nil {
+				return Binding{}, false, cfg.bindingErr
+			}
+			return Binding{ServiceAccount: saKey, Secret: secKey}, !cfg.bindingNotOK, nil
 		},
 		TokenLifetime: cfg.tokenLifeReq,
 	}
@@ -163,6 +167,11 @@ func TestReconcile(t *testing.T) {
 			cfg:            testConfig{owner: true, bindingNotOK: true, sa: true, secret: secretWithToken("", time.Time{}, time.Time{})},
 			wantRequeueMin: DefaultRetryInterval,
 			wantRequeueMax: DefaultRetryInterval,
+		},
+		{
+			name:    "binding error returns an error",
+			cfg:     testConfig{owner: true, bindingErr: errors.New("provider config not found"), sa: true, secret: secretWithToken("", time.Time{}, time.Time{})},
+			wantErr: true,
 		},
 		{
 			name:           "clusters not ready requeues",
