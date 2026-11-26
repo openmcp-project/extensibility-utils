@@ -6,50 +6,127 @@ import (
 	"net/http"
 	"slices"
 
+	fluxmeta "github.com/fluxcd/pkg/apis/meta"
+	"github.com/fluxcd/pkg/runtime/conditions"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
 
-// Allowed fetches the Helm chart from the artifact URL of the given OCIRepository and checks whether
-// upgrading to it is safe by comparing its CRDs against the respective live cluster CRDs.
+const (
+	upgradeGateConditionType     = "UpgradeAllowed"
+	upgradeGateReasonPassed      = "Passed"
+	upgradeGateReasonBlocked     = "Blocked"
+	upgradeGateReasonInProgress  = "Checking"
+	upgradeGateInProgressMessage = "CRDs are being analyzed for breaking version removals"
+)
+
+func conditionChecking(obj client.Object) metav1.Condition {
+	return metav1.Condition{
+		Type:               upgradeGateConditionType,
+		Status:             metav1.ConditionUnknown,
+		ObservedGeneration: obj.GetGeneration(),
+		Reason:             upgradeGateReasonInProgress,
+		Message:            upgradeGateInProgressMessage,
+	}
+}
+
+// TODO track upgrade with status condition to cleanup, possible transitions:
+// upgrade gate -> upgrade gate passed (upgrade ok - no user interaction required)
+// upgrade gate -> upgrade gate passed (upgrade ok - user migrated to pass gate)
+// upgrade gate -> upgrade gate passed (upgrade not ok but user reverted spec to live version)
+
+// Allowed creates a temporary OCIRepository (derived from ociRepoName) for the given chartVersion
+// and checks whether upgrading to it is safe by comparing its CRDs against the respective live
+// cluster CRDs. Returns requeue=true with a nil error when the temporary OCIRepository is not yet
+// ready; the caller is responsible for requeueing and for deleting the temporary OCIRepository.
 // Upgrades are blocked if a CRD version is removed that is still tracked as a stored version.
-func Allowed(ctx context.Context, cl client.Client, ociRepoName types.NamespacedName) error {
+func Allowed(ctx context.Context, obj client.Object, cl client.Client, ociRepoName types.NamespacedName, chartVersion string) (metav1.Condition, error) {
+
 	var ociRepo sourcev1.OCIRepository
 	if err := cl.Get(ctx, ociRepoName, &ociRepo); err != nil {
-		return fmt.Errorf("fetching OCIRepository %q: %w", ociRepoName, err)
+		return metav1.Condition{}, fmt.Errorf("fetching OCIRepository %q: %w", ociRepoName, err)
 	}
-	if ociRepo.Status.Artifact == nil {
-		return fmt.Errorf("OCIRepository %q has no artifact yet", ociRepoName)
+
+	tempName := types.NamespacedName{Name: ociRepoName.Name + "-upgrade-gate", Namespace: ociRepoName.Namespace}
+
+	var tempRepo sourcev1.OCIRepository
+	if err := cl.Get(ctx, tempName, &tempRepo); apierrors.IsNotFound(err) {
+		tempRepo = sourcev1.OCIRepository{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      tempName.Name,
+				Namespace: tempName.Namespace,
+			},
+			Spec: sourcev1.OCIRepositorySpec{
+				URL:            ociRepo.Spec.URL,
+				Interval:       ociRepo.Spec.Interval,
+				Reference:      &sourcev1.OCIRepositoryRef{Tag: chartVersion},
+				LayerSelector:  ociRepo.Spec.LayerSelector,
+				SecretRef:      ociRepo.Spec.SecretRef,
+				CertSecretRef:  ociRepo.Spec.CertSecretRef,
+				ProxySecretRef: ociRepo.Spec.ProxySecretRef,
+			},
+		}
+		if err := cl.Create(ctx, &tempRepo); err != nil {
+			return metav1.Condition{}, fmt.Errorf("creating temporary OCIRepository for version %q: %w", chartVersion, err)
+		}
+		return conditionChecking(obj), nil
+	} else if err != nil {
+		return metav1.Condition{}, fmt.Errorf("fetching temporary OCIRepository %q: %w", tempName, err)
 	}
-	resp, err := http.Get(ociRepo.Status.Artifact.URL)
+
+	if cond := conditions.Get(&tempRepo, fluxmeta.ReadyCondition); cond != nil && cond.Status == "False" {
+		return conditionChecking(obj), nil
+	}
+	if !conditions.IsTrue(&tempRepo, fluxmeta.ReadyCondition) || tempRepo.Status.Artifact == nil {
+		return conditionChecking(obj), nil
+	}
+
+	resp, err := http.Get(tempRepo.Status.Artifact.URL)
 	if err != nil {
-		return fmt.Errorf("downloading chart artifact from %q: %w", ociRepo.Status.Artifact.URL, err)
+		return metav1.Condition{}, fmt.Errorf("downloading chart artifact from %q: %w", tempRepo.Status.Artifact.URL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("downloading chart artifact from %q: unexpected status %s", ociRepo.Status.Artifact.URL, resp.Status)
+		return metav1.Condition{}, fmt.Errorf("downloading chart artifact from %q: unexpected status %s", tempRepo.Status.Artifact.URL, resp.Status)
 	}
 	chart, err := loader.LoadArchive(resp.Body)
 	if err != nil {
-		return fmt.Errorf("loading helm chart archive: %w", err)
+		return metav1.Condition{}, fmt.Errorf("loading helm chart archive: %w", err)
 	}
 	upgradePairs := []crdUpgrade{}
 	for _, crdObj := range chart.CRDObjects() {
 		var chartCRD apiextensionsv1.CustomResourceDefinition
 		if err := yaml.Unmarshal(crdObj.File.Data, &chartCRD); err != nil {
-			return fmt.Errorf("parsing CRD %q from chart: %w", crdObj.Name, err)
+			return metav1.Condition{}, fmt.Errorf("parsing CRD %q from chart: %w", crdObj.Name, err)
 		}
 		var liveCRD apiextensionsv1.CustomResourceDefinition
 		if err := cl.Get(ctx, types.NamespacedName{Name: chartCRD.Name}, &liveCRD); err != nil {
-			return fmt.Errorf("fetching live CRD %q: %w", chartCRD.Name, err)
+			return metav1.Condition{}, fmt.Errorf("fetching live CRD %q: %w", chartCRD.Name, err)
 		}
 		upgradePairs = append(upgradePairs, crdUpgrade{from: liveCRD, to: chartCRD})
 	}
-	return allowed(upgradePairs)
+	if err := allowed(upgradePairs); err != nil {
+		return metav1.Condition{
+			Type:               upgradeGateConditionType,
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: obj.GetGeneration(),
+			Reason:             upgradeGateReasonBlocked,
+			Message:            err.Error(),
+		}, nil
+	}
+	return metav1.Condition{
+		Type:               upgradeGateConditionType,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: obj.GetGeneration(),
+		Reason:             upgradeGateReasonPassed,
+		Message:            "No CRD version is dropped that is still tracked as stored version",
+	}, nil
 }
 
 type crdUpgrade struct {
