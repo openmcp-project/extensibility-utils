@@ -26,8 +26,8 @@ const (
 	upgradeGateInProgressMessage = "CRDs are being analyzed for breaking version removals"
 )
 
-func conditionChecking(obj client.Object) metav1.Condition {
-	return metav1.Condition{
+func conditionChecking(obj client.Object) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               upgradeGateConditionType,
 		Status:             metav1.ConditionUnknown,
 		ObservedGeneration: obj.GetGeneration(),
@@ -36,32 +36,25 @@ func conditionChecking(obj client.Object) metav1.Condition {
 	}
 }
 
-// TODO track upgrade with status condition to cleanup, possible transitions:
-// upgrade gate -> upgrade gate passed (upgrade ok - no user interaction required)
-// upgrade gate -> upgrade gate passed (upgrade ok - user migrated to pass gate)
-// upgrade gate -> upgrade gate passed (upgrade not ok but user reverted spec to live version)
-
 // Allowed creates a temporary OCIRepository (derived from ociRepoName) for the given chartVersion
 // and checks whether upgrading to it is safe by comparing its CRDs against the respective live
-// cluster CRDs. Returns requeue=true with a nil error when the temporary OCIRepository is not yet
-// ready; the caller is responsible for requeueing and for deleting the temporary OCIRepository.
+// cluster CRDs. Returns an UpgradeAllowed condition to track the upgrade allowed status and an error for technical errors.
+// The caller is responsible preventing an upgrade by exiting reconciliation on UpgradeAllowed.Status False and requeuing on UpgradeAllowed.Status Unknonw.
+// UpgradeAllowed.Status Unknown indicates that the upgrade check waits for resources required to check if an upgrade is allowed.
+// UpgradeAllowed.Status False indicates a blocked upgrade that requires user interaction where a user can either migrate resources to pass the upgrade gate or set the obj.spec.Version back to match the obj.Status.Version.
+// UpgradeAllowed.Status True indicates a passed upgrade check where a caller can proceed with updating any managed resources to the requested version.
 // Upgrades are blocked if a CRD version is removed that is still tracked as a stored version.
-func Allowed(ctx context.Context, obj client.Object, cl client.Client, ociRepoName types.NamespacedName, chartVersion string) (metav1.Condition, error) {
-
+func Allowed(ctx context.Context, obj client.Object, cl client.Client, ociRepoName types.NamespacedName, chartVersion string) (*metav1.Condition, error) {
 	var ociRepo sourcev1.OCIRepository
 	if err := cl.Get(ctx, ociRepoName, &ociRepo); err != nil {
-		return metav1.Condition{}, fmt.Errorf("fetching OCIRepository %q: %w", ociRepoName, err)
+		return nil, fmt.Errorf("fetching OCIRepository %q: %w", ociRepoName, err)
 	}
-
 	tempName := types.NamespacedName{Name: ociRepoName.Name + "-upgrade-gate", Namespace: ociRepoName.Namespace}
-
 	var tempRepo sourcev1.OCIRepository
 	if err := cl.Get(ctx, tempName, &tempRepo); apierrors.IsNotFound(err) {
 		tempRepo = sourcev1.OCIRepository{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      tempName.Name,
-				Namespace: tempName.Namespace,
-			},
+			Name:      tempName.Name,
+			Namespace: tempName.Namespace,
 			Spec: sourcev1.OCIRepositorySpec{
 				URL:            ociRepo.Spec.URL,
 				Interval:       ociRepo.Spec.Interval,
@@ -73,11 +66,11 @@ func Allowed(ctx context.Context, obj client.Object, cl client.Client, ociRepoNa
 			},
 		}
 		if err := cl.Create(ctx, &tempRepo); err != nil {
-			return metav1.Condition{}, fmt.Errorf("creating temporary OCIRepository for version %q: %w", chartVersion, err)
+			return nil, fmt.Errorf("creating temporary OCIRepository for version %q: %w", chartVersion, err)
 		}
 		return conditionChecking(obj), nil
 	} else if err != nil {
-		return metav1.Condition{}, fmt.Errorf("fetching temporary OCIRepository %q: %w", tempName, err)
+		return nil, fmt.Errorf("fetching temporary OCIRepository %q: %w", tempName, err)
 	}
 
 	if cond := conditions.Get(&tempRepo, fluxmeta.ReadyCondition); cond != nil && cond.Status == "False" {
@@ -89,30 +82,30 @@ func Allowed(ctx context.Context, obj client.Object, cl client.Client, ociRepoNa
 
 	resp, err := http.Get(tempRepo.Status.Artifact.URL)
 	if err != nil {
-		return metav1.Condition{}, fmt.Errorf("downloading chart artifact from %q: %w", tempRepo.Status.Artifact.URL, err)
+		return nil, fmt.Errorf("downloading chart artifact from %q: %w", tempRepo.Status.Artifact.URL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return metav1.Condition{}, fmt.Errorf("downloading chart artifact from %q: unexpected status %s", tempRepo.Status.Artifact.URL, resp.Status)
+		return nil, fmt.Errorf("downloading chart artifact from %q: unexpected status %s", tempRepo.Status.Artifact.URL, resp.Status)
 	}
 	chart, err := loader.LoadArchive(resp.Body)
 	if err != nil {
-		return metav1.Condition{}, fmt.Errorf("loading helm chart archive: %w", err)
+		return nil, fmt.Errorf("loading helm chart archive: %w", err)
 	}
 	upgradePairs := []crdUpgrade{}
 	for _, crdObj := range chart.CRDObjects() {
 		var chartCRD apiextensionsv1.CustomResourceDefinition
 		if err := yaml.Unmarshal(crdObj.File.Data, &chartCRD); err != nil {
-			return metav1.Condition{}, fmt.Errorf("parsing CRD %q from chart: %w", crdObj.Name, err)
+			return nil, fmt.Errorf("parsing CRD %q from chart: %w", crdObj.Name, err)
 		}
 		var liveCRD apiextensionsv1.CustomResourceDefinition
 		if err := cl.Get(ctx, types.NamespacedName{Name: chartCRD.Name}, &liveCRD); err != nil {
-			return metav1.Condition{}, fmt.Errorf("fetching live CRD %q: %w", chartCRD.Name, err)
+			return nil, fmt.Errorf("fetching live CRD %q: %w", chartCRD.Name, err)
 		}
 		upgradePairs = append(upgradePairs, crdUpgrade{from: liveCRD, to: chartCRD})
 	}
 	if err := allowed(upgradePairs); err != nil {
-		return metav1.Condition{
+		return &metav1.Condition{
 			Type:               upgradeGateConditionType,
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: obj.GetGeneration(),
@@ -120,7 +113,7 @@ func Allowed(ctx context.Context, obj client.Object, cl client.Client, ociRepoNa
 			Message:            err.Error(),
 		}, nil
 	}
-	return metav1.Condition{
+	return &metav1.Condition{
 		Type:               upgradeGateConditionType,
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: obj.GetGeneration(),
